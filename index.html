@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Recepten DB</title>
+
+  <link rel="manifest" href="./manifest.json" />
+  <meta name="theme-color" content="#0b1220" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">🍲</div>
+      <div class="brandText">
+        <div class="brandTitle">Recepten DB</div>
+        <div class="brandSub">Cloud sync via Supabase</div>
+        <div class="brandSub muted" id="authInfo">Niet ingelogd</div>
+      </div>
+    </div>
+
+    <div class="topActions">
+      <input id="email" class="input" type="email" placeholder="jij@voorbeeld.be" autocomplete="email" />
+      <button id="btnLogin" class="btn secondary">Login link</button>
+      <button id="btnLogout" class="btn secondary" style="display:none;">Logout</button>
+
+      <input id="csvFile" type="file" accept=".csv,text/csv" style="display:none" />
+      <button id="btnImport" class="btn secondary" title="Importeer title,tags,drive_url uit CSV">Import CSV</button>
+
+      <button id="btnNew" class="btn primary">Nieuw recept</button>
+    </div>
+  </header>
+
+  <main class="grid">
+    <!-- Zoeken -->
+    <section class="card">
+      <h2>Zoeken</h2>
+
+      <!-- 1) TAGS ZOEKEN (bestond al) -->
+      <div class="formRow">
+        <input id="searchInput" class="input" type="text"
+               placeholder='Zoek in tags/labels (bv. "pasta" of "vega")' />
+        <button id="btnSearch" class="btn secondary">Zoek tags</button>
+      </div>
+
+      <!-- 2) TITEL ZOEKEN (nieuw) -->
+      <div class="formRow">
+        <input id="titleSearchInput" class="input" type="text"
+               placeholder='Zoek in titels (bv. "carbonara")' />
+        <button id="btnTitleSearch" class="btn secondary">Zoek titel</button>
+      </div>
+
+      <div class="formRow">
+        <input id="favName" class="input" type="text" placeholder='Naam voor favoriet (bv. Snelle pasta)' />
+        <button id="btnSaveFav" class="btn secondary">Bewaar favoriet</button>
+      </div>
+
+      <div class="cols2">
+        <div>
+          <h3>Favoriete zoekopdrachten</h3>
+          <ul id="favList" class="list muted"><li>Nog geen favorieten.</li></ul>
+        </div>
+
+        <div>
+          <h3>Resultaten</h3>
+          <div id="resultsMeta" class="muted"></div>
+          <ul id="resultsList" class="list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Recepten -->
+    <section class="card">
+      <h2>Recepten</h2>
+      <div id="docsMeta" class="muted"></div>
+      <ul id="docsList" class="list"></ul>
+    </section>
+
+    <!-- Editor -->
+    <section class="card">
+      <h2 id="editorTitle">Editor</h2>
+
+      <label class="label">Titel</label>
+      <input id="title" class="input" type="text" placeholder="Bv. Spaghetti aglio e olio" />
+
+      <label class="label">Tags / labels (komma-gescheiden)</label>
+      <input id="tags" class="input" type="text" placeholder="bv. pasta, snel, vega" />
+
+      <label class="label">Google Drive link (PDF / Doc / ...)</label>
+      <input id="driveUrl" class="input" type="url" placeholder="Plak hier de Google Drive link" />
+      <div class="hint muted">Tip: open het bestand in Drive → “Kopieer link” → plak hier.</div>
+
+      <div class="btnRow">
+        <button id="btnDelete" class="btn danger">Verwijder</button>
+        <button id="btnClear" class="btn secondary">Leegmaken</button>
+        <button id="btnSave" class="btn primary">Opslaan</button>
+      </div>
+
+      <div id="status" class="status muted"></div>
+    </section>
+  </main>
+
+  <!-- Supabase JS v2 -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

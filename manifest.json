@@ -1,0 +1,15 @@
+{
+  "name": "Recepten DB",
+  "short_name": "Recepten",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0b1220",
+  "theme_color": "#111827",
+  "icons": [
+    {
+      "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAr0lEQVR4nO3bQQrCMBQF0Pz/0z1q0mJj2Jm0Z1bQwKQmG1hQ8C8d1J7c5i2qgq0b8bqgZr4g9wqg1h8c8Yw8m0x3g2v0mQwAAAAAAAAAAAAAAAOA0bqk5o8mGm7z7cYfVw0m3l8p8m0m4r9bB3m0m4z2mGm7z7cYfVw0m3l8p8m0m4r9bB3m0m4z2mGk1m8Fq7c6y3JQAAAABJRU5ErkJggg==",
+      "sizes": "64x64",
+      "type": "image/png"
+    }
+  ]
+}
