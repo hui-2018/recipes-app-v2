@@ -2,7 +2,7 @@
 // Supabase config
 // ==============================
 const SUPABASE_URL = "https://bduuymwmpjxnkhunreyl.supabase.co";
-const SUPABASE_ANON_KEY = "PASTE_HIER_JOUW_ANON_KEY"; // <-- zet hier jouw werkende anon key
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJkdXV5bXdtcGp4bmtodW5yZXlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAzMDEzNTMsImV4cCI6MjA4NTg3NzM1M30.jD64IVrN3e9Qjb9Xq1PzMQxplhLmM5FCOtV31gfE8Sc"; // <-- zet hier jouw werkende anon key
 
 // Storage
 const STORAGE_BUCKET = "recipe_docs";
