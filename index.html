@@ -38,17 +38,17 @@
     <section class="card">
       <h2>Zoeken</h2>
 
-      <!-- 1) TAGS ZOEKEN -->
+      <!-- TAGS ZOEKEN -->
       <div class="formRow">
         <input id="searchInput" class="input" type="text"
                placeholder='Zoek in tags/labels (bv. "pasta" of "vega")' />
         <button id="btnSearch" class="btn secondary">Zoek tags</button>
       </div>
 
-      <!-- 2) TITEL ZOEKEN -->
+      <!-- TITEL ZOEKEN -->
       <div class="formRow">
         <input id="titleSearchInput" class="input" type="text"
-               placeholder='Zoek in titels (bv. "carbonara")' />
+               placeholder='Zoek in titels (bv. "tonijn")' />
         <button id="btnTitleSearch" class="btn secondary">Zoek titel</button>
       </div>
 
@@ -94,7 +94,6 @@
         Kies een bestand om te uploaden naar Supabase Storage. Na opslaan kan je het met één klik openen.
       </div>
 
-      <!-- Optioneel: laat deze staan voor overgang/migratie van oude Drive-links -->
       <details class="hint muted" style="margin-top:10px">
         <summary>Oude Google Drive link (optioneel, enkel voor migratie)</summary>
         <div style="margin-top:8px">
@@ -118,7 +117,6 @@
     </section>
   </main>
 
-  <!-- Supabase JS v2 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./app.js"></script>
 </body>
