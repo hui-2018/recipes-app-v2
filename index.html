@@ -27,7 +27,7 @@
       <button id="btnLogout" class="btn secondary" style="display:none;">Logout</button>
 
       <input id="csvFile" type="file" accept=".csv,text/csv" style="display:none" />
-      <button id="btnImport" class="btn secondary" title="Importeer title,tags,drive_url uit CSV">Import CSV</button>
+      <button id="btnImport" class="btn secondary" title="Importeer title,tags (en optioneel drive_url) uit CSV">Import CSV</button>
 
       <button id="btnNew" class="btn primary">Nieuw recept</button>
     </div>
@@ -38,14 +38,14 @@
     <section class="card">
       <h2>Zoeken</h2>
 
-      <!-- 1) TAGS ZOEKEN (bestond al) -->
+      <!-- 1) TAGS ZOEKEN -->
       <div class="formRow">
         <input id="searchInput" class="input" type="text"
                placeholder='Zoek in tags/labels (bv. "pasta" of "vega")' />
         <button id="btnSearch" class="btn secondary">Zoek tags</button>
       </div>
 
-      <!-- 2) TITEL ZOEKEN (nieuw) -->
+      <!-- 2) TITEL ZOEKEN -->
       <div class="formRow">
         <input id="titleSearchInput" class="input" type="text"
                placeholder='Zoek in titels (bv. "carbonara")' />
@@ -88,9 +88,25 @@
       <label class="label">Tags / labels (komma-gescheiden)</label>
       <input id="tags" class="input" type="text" placeholder="bv. pasta, snel, vega" />
 
-      <label class="label">Google Drive link (PDF / Doc / ...)</label>
-      <input id="driveUrl" class="input" type="url" placeholder="Plak hier de Google Drive link" />
-      <div class="hint muted">Tip: open het bestand in Drive → “Kopieer link” → plak hier.</div>
+      <label class="label">Document (PDF / Word / …) in cloud storage</label>
+      <input id="docFile" class="input" type="file" />
+      <div class="hint muted" id="docHint">
+        Kies een bestand om te uploaden naar Supabase Storage. Na opslaan kan je het met één klik openen.
+      </div>
+
+      <!-- Optioneel: laat deze staan voor overgang/migratie van oude Drive-links -->
+      <details class="hint muted" style="margin-top:10px">
+        <summary>Oude Google Drive link (optioneel, enkel voor migratie)</summary>
+        <div style="margin-top:8px">
+          <input id="driveUrl" class="input" type="url" placeholder="Plak hier eventueel een oude Drive-link" />
+          <div class="hint muted">Niet nodig als je het document uploadt via het veld hierboven.</div>
+        </div>
+      </details>
+
+      <div class="btnRow" style="margin-top:10px">
+        <button id="btnOpenDoc" class="btn secondary" style="display:none;">Open document</button>
+        <button id="btnRemoveDoc" class="btn secondary" style="display:none;">Verwijder document</button>
+      </div>
 
       <div class="btnRow">
         <button id="btnDelete" class="btn danger">Verwijder</button>
