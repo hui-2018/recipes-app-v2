@@ -2,7 +2,7 @@
 // Supabase config
 // ==============================
 const SUPABASE_URL = "https://bduuymwmpjxnkhunreyl.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJkdXV5bXdtcGp4bmtodW5yZXlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAzMDEzNTMsImV4cCI6MjA4NTg3NzM1M30.jD64IVrN3e9Qjb9Xq1PzMQxplhLmM5FCOtV31gfE8Sc"; // <-- laat jouw werkende key staan
+const SUPABASE_ANON_KEY = "PASTE_HIER_JOUW_ANON_KEY"; // <-- zet hier jouw werkende anon key
 
 // Storage
 const STORAGE_BUCKET = "recipe_docs";
@@ -31,7 +31,7 @@ function setAuthInfo(msg) {
   if (el) el.textContent = msg;
 }
 
-// Globale error opvang (zodat “hangs” zichtbaar worden)
+// Globale error opvang
 window.addEventListener("error", (e) => {
   setStatus("JS fout: " + (e?.message || e), "err");
 });
@@ -87,6 +87,22 @@ function inferContentType(file) {
 function buildStoragePath({ userId, recipeId, fileName }) {
   const cleanName = String(fileName || "document").replace(/[^a-zA-Z0-9._-]+/g, "_");
   return `${userId}/${recipeId}/${safeUuid()}_${cleanName}`;
+}
+
+// Drive URL normalisatie (knop moet op alle recepten werken)
+function toDriveOpenUrl(url) {
+  const s = String(url || "").trim();
+  if (!s) return "";
+
+  // /file/d/<id>/view
+  const m1 = s.match(/\/d\/([^/]+)/);
+  if (m1 && m1[1]) return `https://drive.google.com/open?id=${m1[1]}`;
+
+  // ?id=<id>
+  const m2 = s.match(/[?&]id=([^&]+)/);
+  if (m2 && m2[1]) return `https://drive.google.com/open?id=${m2[1]}`;
+
+  return s;
 }
 
 // ==============================
@@ -194,7 +210,6 @@ function renderFavs() {
   `).join("");
 }
 
-// Delegation voor favs
 function wireFavoritesDelegation() {
   document.getElementById("favList").addEventListener("click", (e) => {
     const runBtn = e.target.closest("button[data-fav-run]");
@@ -298,7 +313,7 @@ async function deleteRecipe() {
       if (delErr) throw delErr;
     }
   } catch {
-    // niet blocken; DB delete blijft belangrijk
+    // niet blocken
   }
 
   const { error } = await sb.from("recipes").delete().eq("id", currentRecipeId);
@@ -344,7 +359,7 @@ async function uploadAndAttachDocument({ recipeId, file }) {
   if (!recipeId) throw new Error("Geen recept-ID.");
   if (!file) throw new Error("Geen bestand gekozen.");
 
-  // Oude file verwijderen (zodat je geen rommel krijgt)
+  // Oude file verwijderen
   const existing = currentRecipe || (await loadRecipe(recipeId));
   if (existing?.file_path) {
     try { await sb.storage.from(STORAGE_BUCKET).remove([existing.file_path]); } catch {}
@@ -353,7 +368,6 @@ async function uploadAndAttachDocument({ recipeId, file }) {
   let path = buildStoragePath({ userId: currentUser.id, recipeId, fileName: file.name });
   const contentType = inferContentType(file);
 
-  // retry bij "exists"
   for (let attempt = 0; attempt < 3; attempt++) {
     const { error } = await sb.storage
       .from(STORAGE_BUCKET)
@@ -389,11 +403,15 @@ async function uploadAndAttachDocument({ recipeId, file }) {
 function updateEditorDocControls() {
   const openBtn = document.getElementById("btnOpenDoc");
   const rmBtn = document.getElementById("btnRemoveDoc");
+  const driveBtn = document.getElementById("btnOpenDrive");
   const hint = document.getElementById("docHint");
 
   const hasFile = !!(currentRecipe?.file_path && String(currentRecipe.file_path).trim());
+  const hasDrive = !!(currentRecipe?.drive_url && String(currentRecipe.drive_url).trim());
+
   if (openBtn) openBtn.style.display = hasFile ? "" : "none";
   if (rmBtn) rmBtn.style.display = hasFile ? "" : "none";
+  if (driveBtn) driveBtn.style.display = hasDrive ? "" : "none";
 
   if (!hint) return;
 
@@ -448,6 +466,7 @@ async function renderDocs() {
       const tagsHtml = tags.map(t => `<span class="badge">${escapeHtml(t)}</span>`).join("");
       const updated = d.updated_at ? new Date(d.updated_at).toLocaleString() : "";
       const hasFile = !!(d.file_path && String(d.file_path).trim());
+      const hasDrive = !!(d.drive_url && String(d.drive_url).trim());
 
       return `
         <li class="item">
@@ -460,12 +479,12 @@ async function renderDocs() {
             <div class="actions">
               <button class="btn small secondary" data-open="${d.id}">Open</button>
               ${hasFile ? `<button class="btn small secondary" data-openfile="${d.id}">Open document</button>` : ``}
+              ${hasDrive ? `<button class="btn small secondary" data-opendrive="${d.id}">Drive</button>` : ``}
             </div>
           </div>
         </li>
       `;
     }).join("");
-    // GEEN querySelectorAll listeners meer hier: delegation regelt dat
   } catch (e) {
     meta.textContent = "Fout bij laden.";
     list.innerHTML = "";
@@ -496,7 +515,6 @@ function renderSearchResults(hits, label) {
       </div>
     </li>
   `).join("");
-  // GEEN querySelectorAll listeners meer hier: delegation regelt dat
 }
 
 // ==============================
@@ -571,7 +589,7 @@ function saveFavoriteSearch() {
 }
 
 // ==============================
-// CSV import (ongewijzigd eenvoudig)
+// CSV import (eenvoudig)
 // ==============================
 function parseCsv(text) {
   const rows = [];
@@ -665,7 +683,7 @@ async function importCsvText(csvText) {
 }
 
 // ==============================
-// Delegation voor Open-knoppen (BELANGRIJK FIX)
+// Delegation voor knoppen in lijsten
 // ==============================
 function wireListsDelegation() {
   // Zoekresultaten: Open
@@ -695,11 +713,12 @@ function wireListsDelegation() {
     }
   });
 
-  // Receptenlijst: Open en Open document
+  // Receptenlijst: Open, Open document, Drive
   document.getElementById("docsList").addEventListener("click", async (e) => {
     const openBtn = e.target.closest("button[data-open]");
     const openFileBtn = e.target.closest("button[data-openfile]");
-    if (!openBtn && !openFileBtn) return;
+    const openDriveBtn = e.target.closest("button[data-opendrive]");
+    if (!openBtn && !openFileBtn && !openDriveBtn) return;
 
     try {
       if (openBtn) {
@@ -728,8 +747,20 @@ function wireListsDelegation() {
           (currentRecipe && String(currentRecipe.id) === String(id))
             ? currentRecipe
             : await loadRecipe(id);
-
         await openRecipeDocument(r);
+        return;
+      }
+
+      if (openDriveBtn) {
+        const id = openDriveBtn.getAttribute("data-opendrive");
+        const r =
+          (currentRecipe && String(currentRecipe.id) === String(id))
+            ? currentRecipe
+            : await loadRecipe(id);
+
+        const url = toDriveOpenUrl(r?.drive_url);
+        if (!url) return setStatus("Geen Drive-link aanwezig.", "muted");
+        window.open(url, "_blank", "noopener");
       }
     } catch (err) {
       setStatus("Actie mislukt: " + (err?.message || err), "err");
@@ -755,7 +786,7 @@ async function registerServiceWorker() {
 window.addEventListener("DOMContentLoaded", async () => {
   await registerServiceWorker();
 
-  // Delegation eerst zetten
+  // Delegation
   wireListsDelegation();
   wireFavoritesDelegation();
 
@@ -808,6 +839,19 @@ window.addEventListener("DOMContentLoaded", async () => {
       await openRecipeDocument(r);
     } catch (e) {
       setStatus("Openen mislukt: " + (e?.message || e), "err");
+    }
+  });
+
+  // NIEUW: Drive knop in editor (altijd tonen als drive_url bestaat)
+  document.getElementById("btnOpenDrive").addEventListener("click", async () => {
+    try {
+      if (!currentRecipeId) return setStatus("Open eerst een recept.", "err");
+      const r = currentRecipe || (await loadRecipe(currentRecipeId));
+      const url = toDriveOpenUrl(r?.drive_url);
+      if (!url) return setStatus("Geen Drive-link aanwezig voor dit recept.", "muted");
+      window.open(url, "_blank", "noopener");
+    } catch (e) {
+      setStatus("Drive openen mislukt: " + (e?.message || e), "err");
     }
   });
 
@@ -870,6 +914,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
       document.getElementById("editorTitle").textContent = `Editor (ID: ${id})`;
       document.getElementById("docFile").value = "";
+      document.getElementById("driveUrl").value = drive_url; // blijft zichtbaar
       updateEditorDocControls();
 
       await renderDocs();
