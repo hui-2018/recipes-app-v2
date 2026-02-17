@@ -4,34 +4,30 @@
 const SUPABASE_URL = "https://bduuymwmpjxnkhunreyl.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJkdXV5bXdtcGp4bmtodW5yZXlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAzMDEzNTMsImV4cCI6MjA4NTg3NzM1M30.jD64IVrN3e9Qjb9Xq1PzMQxplhLmM5FCOtV31gfE8Sc"; // <-- jouw werkende anon key
 
-// Storage
 const STORAGE_BUCKET = "recipe_docs";
 const SIGNED_URL_TTL_SECONDS = 60;
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ==============================
-// DOM helpers
+// DOM helpers (veilig)
 // ==============================
-function $(id) {
-  const el = document.getElementById(id);
-  if (!el) throw new Error(`Element ontbreekt: #${id}`);
-  return el;
+function el(id) {
+  return document.getElementById(id);
 }
 
 function setStatus(msg, kind = "") {
-  const el = document.getElementById("status");
-  if (!el) return;
-  el.textContent = msg || "";
-  el.className = "status " + (kind || "muted");
+  const s = el("status");
+  if (!s) return;
+  s.textContent = msg || "";
+  s.className = "status " + (kind || "muted");
 }
 
 function setAuthInfo(msg) {
-  const el = document.getElementById("authInfo");
-  if (el) el.textContent = msg;
+  const a = el("authInfo");
+  if (a) a.textContent = msg;
 }
 
-// Globale error opvang
 window.addEventListener("error", (e) => {
   setStatus("JS fout: " + (e?.message || e), "err");
 });
@@ -40,8 +36,7 @@ window.addEventListener("unhandledrejection", (e) => {
   setStatus("Async fout: " + msg, "err");
 });
 
-// Supabase magic links zetten tokens in de URL hash.
-// BELANGRIJK: pas opruimen NA Supabase de sessie verwerkt heeft (dus niet op page-load).
+// Tokens uit URL hash pas opruimen na auth verwerking
 function cleanAuthHashFromUrl() {
   const h = window.location.hash || "";
   if (h.includes("access_token=") || h.includes("refresh_token=") || h.includes("type=")) {
@@ -95,23 +90,16 @@ function inferContentType(file) {
   return file?.type || "application/octet-stream";
 }
 
-// Drive URL normalisatie
 function toDriveOpenUrl(url) {
   const s = String(url || "").trim();
   if (!s) return "";
-
-  // /file/d/<id>/view
   const m1 = s.match(/\/d\/([^/]+)/);
   if (m1 && m1[1]) return `https://drive.google.com/open?id=${m1[1]}`;
-
-  // ?id=<id>
   const m2 = s.match(/[?&]id=([^&]+)/);
   if (m2 && m2[1]) return `https://drive.google.com/open?id=${m2[1]}`;
-
   return s;
 }
 
-// Storage pad: workspace-based
 function buildStoragePath({ workspaceId, recipeId, fileName }) {
   const cleanName = String(fileName || "document").replace(/[^a-zA-Z0-9._-]+/g, "_");
   return `${workspaceId}/${recipeId}/${safeUuid()}_${cleanName}`;
@@ -119,16 +107,17 @@ function buildStoragePath({ workspaceId, recipeId, fileName }) {
 
 function requireWorkspace() {
   if (!currentUser) throw new Error("Niet ingelogd.");
-  if (!currentWorkspaceId) {
-    throw new Error("Geen workspace gevonden voor dit account. Voeg dit account toe als member (workspace_members).");
-  }
+  if (!currentWorkspaceId) throw new Error("Geen workspace gevonden voor dit account.");
+}
+
+function findCachedRecipeById(id) {
+  return (cacheRecipes || []).find((r) => String(r.id) === String(id)) || null;
 }
 
 // ==============================
 // Auth + Workspace
 // ==============================
 async function loadMyWorkspaceId() {
-  // Vereist: workspace_members SELECT policy voor eigen user_id
   const { data, error } = await sb
     .from("workspace_members")
     .select("workspace_id")
@@ -145,8 +134,9 @@ async function refreshAuth() {
   const { data } = await sb.auth.getSession();
   currentUser = data?.session?.user || null;
 
+  const btnLogout = el("btnLogout");
   if (currentUser) {
-    document.getElementById("btnLogout").style.display = "";
+    if (btnLogout) btnLogout.style.display = "";
     setAuthInfo(`Ingelogd als ${currentUser.email}`);
 
     try {
@@ -161,7 +151,7 @@ async function refreshAuth() {
       setStatus("Workspace ophalen mislukt: " + (e?.message || e), "err");
     }
   } else {
-    document.getElementById("btnLogout").style.display = "none";
+    if (btnLogout) btnLogout.style.display = "none";
     setAuthInfo("Niet ingelogd");
     currentWorkspaceId = null;
   }
@@ -171,11 +161,12 @@ async function refreshAuth() {
 }
 
 async function loginWithMagicLink() {
-  const email = document.getElementById("email").value.trim();
+  const emailInput = el("email");
+  const btn = el("btnLogin");
+  const email = (emailInput?.value || "").trim();
   if (!email) return setStatus("Vul je e-mailadres in.", "err");
 
-  const btn = document.getElementById("btnLogin");
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
 
   try {
     setStatus("Login link wordt verstuurd…", "muted");
@@ -191,15 +182,13 @@ async function loginWithMagicLink() {
   } catch (e) {
     setStatus("Login fout: " + (e?.message || e), "err");
   } finally {
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
   }
 }
 
 async function logout() {
   try {
     await sb.auth.signOut();
-
-    // Hard reset naar schone URL zonder hash/tokens. Dit voorkomt "blijven hangen" op oud account.
     window.location.replace(window.location.pathname + window.location.search);
   } catch (e) {
     setStatus("Logout fout: " + (e?.message || e), "err");
@@ -226,7 +215,7 @@ function saveFavs(favs) {
 }
 
 function renderFavs() {
-  const list = document.getElementById("favList");
+  const list = el("favList");
   if (!list) return;
 
   if (!currentUser) {
@@ -247,44 +236,21 @@ function renderFavs() {
   list.innerHTML = favs
     .map(
       (f, idx) => `
-    <li class="item">
-      <div class="itemTop">
-        <div>
-          <strong>${escapeHtml(f.name)}</strong>
-          <div class="muted">Zoekterm (tags): ${escapeHtml(f.q)}</div>
+      <li class="item">
+        <div class="itemTop">
+          <div>
+            <strong>${escapeHtml(f.name)}</strong>
+            <div class="muted">Zoekterm (tags): ${escapeHtml(f.q)}</div>
+          </div>
+          <div class="actions">
+            <button class="btn small secondary" data-fav-run="${idx}">Run</button>
+            <button class="btn small danger" data-fav-del="${idx}">X</button>
+          </div>
         </div>
-        <div class="actions">
-          <button class="btn small secondary" data-fav-run="${idx}">Run</button>
-          <button class="btn small danger" data-fav-del="${idx}">X</button>
-        </div>
-      </div>
-    </li>
-  `
+      </li>
+    `
     )
     .join("");
-}
-
-function wireFavoritesDelegation() {
-  document.getElementById("favList").addEventListener("click", (e) => {
-    const runBtn = e.target.closest("button[data-fav-run]");
-    const delBtn = e.target.closest("button[data-fav-del]");
-    if (!runBtn && !delBtn) return;
-
-    if (runBtn) {
-      const i = Number(runBtn.getAttribute("data-fav-run"));
-      const f = loadFavs()[i];
-      document.getElementById("searchInput").value = f?.q || "";
-      runTagSearch();
-      return;
-    }
-    if (delBtn) {
-      const i = Number(delBtn.getAttribute("data-fav-del"));
-      const favs = loadFavs();
-      favs.splice(i, 1);
-      saveFavs(favs);
-      renderFavs();
-    }
-  });
 }
 
 // ==============================
@@ -307,23 +273,8 @@ async function fetchRecipes() {
   return cacheRecipes;
 }
 
-async function loadRecipe(id) {
-  if (!currentUser || !currentWorkspaceId) return null;
-
-  const { data, error } = await sb
-    .from("recipes")
-    .select("id,title,tags,file_path,file_name,mime_type,drive_url,updated_at,workspace_id")
-    .eq("id", id)
-    .eq("workspace_id", currentWorkspaceId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data;
-}
-
 async function upsertRecipe(payload) {
   requireWorkspace();
-
   const nowIso = new Date().toISOString();
 
   if (currentRecipeId) {
@@ -344,7 +295,7 @@ async function upsertRecipe(payload) {
     const { data, error } = await sb
       .from("recipes")
       .insert({
-        user_id: currentUser.id, // audit
+        user_id: currentUser.id,
         workspace_id: currentWorkspaceId,
         title: payload.title,
         tags: payload.tags,
@@ -363,16 +314,13 @@ async function deleteRecipe() {
   requireWorkspace();
   if (!currentRecipeId) return;
 
-  // document verwijderen (indien aanwezig)
+  // delete linked file (best effort)
   try {
-    const r = currentRecipe || (await loadRecipe(currentRecipeId));
+    const r = currentRecipe || findCachedRecipeById(currentRecipeId);
     if (r?.file_path) {
-      const { error: delErr } = await sb.storage.from(STORAGE_BUCKET).remove([r.file_path]);
-      if (delErr) throw delErr;
+      await sb.storage.from(STORAGE_BUCKET).remove([r.file_path]);
     }
-  } catch {
-    // niet blocken
-  }
+  } catch {}
 
   const { error } = await sb
     .from("recipes")
@@ -384,7 +332,7 @@ async function deleteRecipe() {
 }
 
 // ==============================
-// Storage (workspace-scoped paths)
+// Storage helpers (alleen nodig als je doc features gebruikt)
 // ==============================
 async function openRecipeDocument(recipe) {
   const filePath = recipe?.file_path;
@@ -400,34 +348,10 @@ async function openRecipeDocument(recipe) {
   window.open(data.signedUrl, "_blank", "noopener");
 }
 
-async function removeRecipeDocument(recipe) {
-  requireWorkspace();
-  if (!recipe?.file_path) return;
-
-  const { error: delErr } = await sb.storage.from(STORAGE_BUCKET).remove([recipe.file_path]);
-  if (delErr) throw delErr;
-
-  const { error: updErr } = await sb
-    .from("recipes")
-    .update({ file_path: null, file_name: null, mime_type: null, updated_at: new Date().toISOString() })
-    .eq("id", recipe.id)
-    .eq("workspace_id", currentWorkspaceId);
-
-  if (updErr) throw updErr;
-}
-
 async function uploadAndAttachDocument({ recipeId, file }) {
   requireWorkspace();
   if (!recipeId) throw new Error("Geen recept-ID.");
   if (!file) throw new Error("Geen bestand gekozen.");
-
-  // Oude file verwijderen
-  const existing = currentRecipe || (await loadRecipe(recipeId));
-  if (existing?.file_path) {
-    try {
-      await sb.storage.from(STORAGE_BUCKET).remove([existing.file_path]);
-    } catch {}
-  }
 
   let path = buildStoragePath({
     workspaceId: currentWorkspaceId,
@@ -437,23 +361,11 @@ async function uploadAndAttachDocument({ recipeId, file }) {
 
   const contentType = inferContentType(file);
 
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const { error } = await sb.storage
-      .from(STORAGE_BUCKET)
-      .upload(path, file, { contentType, upsert: false });
-
-    if (!error) break;
-
-    if (String(error.message || "").toLowerCase().includes("already exists")) {
-      path = buildStoragePath({
-        workspaceId: currentWorkspaceId,
-        recipeId,
-        fileName: file.name,
-      });
-      continue;
-    }
-    throw error;
-  }
+  const { error } = await sb.storage.from(STORAGE_BUCKET).upload(path, file, {
+    contentType,
+    upsert: false,
+  });
+  if (error) throw error;
 
   const { error: updErr } = await sb
     .from("recipes")
@@ -475,54 +387,34 @@ async function uploadAndAttachDocument({ recipeId, file }) {
 // UI rendering
 // ==============================
 function updateEditorDocControls() {
-  const openBtn = document.getElementById("btnOpenDoc");
-  const rmBtn = document.getElementById("btnRemoveDoc");
-  const driveBtn = document.getElementById("btnOpenDrive");
-  const hint = document.getElementById("docHint");
-
-  const hasFile = !!(currentRecipe?.file_path && String(currentRecipe.file_path).trim());
-  const hasDrive = !!(currentRecipe?.drive_url && String(currentRecipe.drive_url).trim());
-
-  if (openBtn) openBtn.style.display = hasFile ? "" : "none";
-  if (rmBtn) rmBtn.style.display = hasFile ? "" : "none";
-  if (driveBtn) driveBtn.style.display = hasDrive ? "" : "none";
-
+  // Deze elementen bestaan niet altijd in jouw index.html -> dus guard
+  const hint = el("docHint");
   if (!hint) return;
-
-  if (!currentUser) {
-    hint.textContent = "Login om documenten te uploaden naar cloud storage.";
-    return;
-  }
-  if (!currentWorkspaceId) {
-    hint.textContent = "Je account zit nog niet in een workspace. Voeg het toe als member.";
-    return;
-  }
-  if (!currentRecipeId) {
-    hint.textContent = "Kies een bestand. Bij Opslaan wordt eerst het recept aangemaakt en daarna het document geüpload.";
-    return;
-  }
-  if (hasFile) {
-    const name = currentRecipe.file_name || "(document)";
-    hint.textContent = `Gekoppeld document: ${name}. Je kan het openen of vervangen door een nieuw bestand te kiezen en op Opslaan te klikken.`;
-  } else {
-    hint.textContent = "Nog geen document gekoppeld. Kies een bestand en klik Opslaan.";
-  }
+  // Als je later doc UI toevoegt, kan je hier verder uitbreiden
 }
 
 function clearEditor() {
   currentRecipeId = null;
   currentRecipe = null;
-  document.getElementById("editorTitle").textContent = "Editor";
-  document.getElementById("title").value = "";
-  document.getElementById("tags").value = "";
-  document.getElementById("driveUrl").value = "";
-  document.getElementById("docFile").value = "";
+
+  const editorTitle = el("editorTitle");
+  if (editorTitle) editorTitle.textContent = "Editor";
+
+  const t = el("title");
+  const tags = el("tags");
+  const drive = el("driveUrl");
+
+  if (t) t.value = "";
+  if (tags) tags.value = "";
+  if (drive) drive.value = "";
+
   updateEditorDocControls();
 }
 
 async function renderDocs() {
-  const meta = document.getElementById("docsMeta");
-  const list = document.getElementById("docsList");
+  const meta = el("docsMeta");
+  const list = el("docsList");
+  if (!meta || !list) return;
 
   if (!currentUser) {
     meta.textContent = "Login om je recepten te zien.";
@@ -549,25 +441,23 @@ async function renderDocs() {
         const tags = (d.tags || []).slice(0, 6);
         const tagsHtml = tags.map((t) => `<span class="badge">${escapeHtml(t)}</span>`).join("");
         const updated = d.updated_at ? new Date(d.updated_at).toLocaleString() : "";
-        const hasFile = !!(d.file_path && String(d.file_path).trim());
         const hasDrive = !!(d.drive_url && String(d.drive_url).trim());
 
         return `
-        <li class="item">
-          <div class="itemTop">
-            <div>
-              <strong>${escapeHtml(d.title || "(zonder titel)")}</strong>
-              <div class="muted">Laatst aangepast: ${escapeHtml(updated)}</div>
-              <div class="badges">${tagsHtml}</div>
+          <li class="item">
+            <div class="itemTop">
+              <div>
+                <strong>${escapeHtml(d.title || "(zonder titel)")}</strong>
+                <div class="muted">Laatst aangepast: ${escapeHtml(updated)}</div>
+                <div class="badges">${tagsHtml}</div>
+              </div>
+              <div class="actions">
+                <button class="btn small secondary" data-open="${d.id}">Open</button>
+                ${hasDrive ? `<button class="btn small secondary" data-opendrive="${d.id}">Drive</button>` : ``}
+              </div>
             </div>
-            <div class="actions">
-              <button class="btn small secondary" data-open="${d.id}">Open</button>
-              ${hasFile ? `<button class="btn small secondary" data-openfile="${d.id}">Open document</button>` : ``}
-              ${hasDrive ? `<button class="btn small secondary" data-opendrive="${d.id}">Drive</button>` : ``}
-            </div>
-          </div>
-        </li>
-      `;
+          </li>
+        `;
       })
       .join("");
   } catch (e) {
@@ -578,8 +468,9 @@ async function renderDocs() {
 }
 
 function renderSearchResults(hits, label) {
-  const meta = document.getElementById("resultsMeta");
-  const list = document.getElementById("resultsList");
+  const meta = el("resultsMeta");
+  const list = el("resultsList");
+  if (!meta || !list) return;
 
   meta.textContent = label || "";
   if (!hits.length) {
@@ -590,290 +481,149 @@ function renderSearchResults(hits, label) {
   list.innerHTML = hits
     .map(
       (d) => `
-    <li class="item">
-      <div class="itemTop">
-        <div>
-          <strong>${escapeHtml(d.title || "(zonder titel)")}</strong>
-          <div class="muted">${escapeHtml(tagsToText(d.tags || []))}</div>
+      <li class="item">
+        <div class="itemTop">
+          <div>
+            <strong>${escapeHtml(d.title || "(zonder titel)")}</strong>
+            <div class="muted">${escapeHtml(tagsToText(d.tags || []))}</div>
+          </div>
+          <div class="actions">
+            <button class="btn small secondary" data-open="${d.id}">Open</button>
+          </div>
         </div>
-        <div class="actions">
-          <button class="btn small secondary" data-open="${d.id}">Open</button>
-        </div>
-      </div>
-    </li>
-  `
+      </li>
+    `
     )
     .join("");
 }
 
 // ==============================
-// Search
+// Search (client-side)
 // ==============================
 async function runTagSearch() {
-  const q = document.getElementById("searchInput").value.trim().toLowerCase();
+  const q = (el("searchInput")?.value || "").trim().toLowerCase();
 
-  if (!currentUser) {
-    renderSearchResults([], "Login om te zoeken.");
-    return;
-  }
-  if (!currentWorkspaceId) {
-    renderSearchResults([], "Geen workspace: zoekfunctie is uitgeschakeld.");
-    return;
-  }
-  if (!q) {
-    document.getElementById("resultsMeta").textContent = "";
-    document.getElementById("resultsList").innerHTML = "";
-    return;
-  }
+  if (!currentUser) return renderSearchResults([], "Login om te zoeken.");
+  if (!currentWorkspaceId) return renderSearchResults([], "Geen workspace: zoekfunctie is uitgeschakeld.");
+  if (!q) return renderSearchResults([], "");
 
   const docs = cacheRecipes.length ? cacheRecipes : await fetchRecipes();
-  const hits = docs.filter((d) => {
-    const tags = (d.tags || []).map((t) => String(t).toLowerCase());
-    return tags.some((t) => t.includes(q));
-  });
+  const hits = docs.filter((d) => (d.tags || []).map((t) => String(t).toLowerCase()).some((t) => t.includes(q)));
 
   renderSearchResults(hits, `${hits.length} resultaat/resultaten voor tag "${q}".`);
 }
 
 async function runTitleSearch() {
-  const q = document.getElementById("titleSearchInput").value.trim();
+  const qRaw = (el("titleSearchInput")?.value || "").trim();
+  if (!currentUser) return renderSearchResults([], "Login om te zoeken.");
+  if (!currentWorkspaceId) return renderSearchResults([], "Geen workspace: zoekfunctie is uitgeschakeld.");
+  if (!qRaw) return renderSearchResults([], "");
 
-  if (!currentUser) {
-    renderSearchResults([], "Login om te zoeken.");
-    return;
-  }
-  if (!currentWorkspaceId) {
-    renderSearchResults([], "Geen workspace: zoekfunctie is uitgeschakeld.");
-    return;
-  }
-  if (!q) {
-    document.getElementById("resultsMeta").textContent = "";
-    document.getElementById("resultsList").innerHTML = "";
-    return;
-  }
+  const q = qRaw.toLowerCase();
+  const docs = cacheRecipes.length ? cacheRecipes : await fetchRecipes();
+  const hits = docs.filter((d) => String(d.title || "").toLowerCase().includes(q));
 
-  try {
-    setStatus("Zoeken in titels…", "muted");
-    const { data, error } = await sb
-      .from("recipes")
-      .select("id,title,tags,file_path,file_name,mime_type,drive_url,updated_at,workspace_id")
-      .eq("workspace_id", currentWorkspaceId)
-      .ilike("title", `%${q}%`)
-      .order("updated_at", { ascending: false });
-
-    if (error) throw error;
-
-    renderSearchResults(data || [], `${(data || []).length} resultaat/resultaten voor titel "${q}".`);
-    setStatus("", "muted");
-  } catch (e) {
-    setStatus("Titel-zoek fout: " + (e?.message || e), "err");
-  }
+  renderSearchResults(hits, `${hits.length} resultaat/resultaten voor titel "${qRaw}".`);
 }
 
 function saveFavoriteSearch() {
   if (!currentUser) return setStatus("Login om favorieten te bewaren.", "err");
   if (!currentWorkspaceId) return setStatus("Geen workspace: favorieten zijn uitgeschakeld.", "err");
 
-  const q = document.getElementById("searchInput").value.trim();
-  const name = document.getElementById("favName").value.trim();
+  const q = (el("searchInput")?.value || "").trim();
+  const name = (el("favName")?.value || "").trim();
   if (!q) return setStatus("Vul eerst een tags-zoekterm in.", "err");
   if (!name) return setStatus("Geef een naam voor je favoriet.", "err");
 
   const favs = loadFavs();
   favs.unshift({ name, q, ts: Date.now() });
   saveFavs(favs.slice(0, 50));
-  document.getElementById("favName").value = "";
+  if (el("favName")) el("favName").value = "";
   renderFavs();
   setStatus("Favoriet opgeslagen.", "ok");
 }
 
 // ==============================
-// CSV import
-// ==============================
-function parseCsv(text) {
-  const rows = [];
-  let row = [];
-  let cur = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    const next = text[i + 1];
-
-    if (ch === '"' && next === '"') {
-      cur += '"';
-      i++;
-      continue;
-    }
-    if (ch === '"') {
-      inQuotes = !inQuotes;
-      continue;
-    }
-
-    if (!inQuotes && ch === ",") {
-      row.push(cur);
-      cur = "";
-      continue;
-    }
-
-    if (!inQuotes && (ch === "\n" || ch === "\r")) {
-      if (ch === "\r" && next === "\n") i++;
-      row.push(cur);
-      cur = "";
-      if (row.some((c) => String(c).trim() !== "")) rows.push(row);
-      row = [];
-      continue;
-    }
-    cur += ch;
-  }
-
-  if (cur.length || row.length) {
-    row.push(cur);
-    if (row.some((c) => String(c).trim() !== "")) rows.push(row);
-  }
-
-  return rows;
-}
-
-async function importCsvText(csvText) {
-  requireWorkspace();
-
-  const rows = parseCsv(csvText);
-  if (rows.length < 2) return setStatus("CSV bevat geen data.", "err");
-
-  const header = rows[0].map((h) => String(h || "").trim().toLowerCase());
-  const iTitle = header.indexOf("title");
-  const iTags = header.indexOf("tags");
-  const iUrl = header.indexOf("drive_url");
-
-  if (iTitle === -1) {
-    return setStatus('CSV moet minstens een kolom "title" hebben (en optioneel "tags" en/of "drive_url").', "err");
-  }
-
-  const existingTitles = new Set(
-    (cacheRecipes || [])
-      .map((r) => String(r.title || "").trim().toLowerCase())
-      .filter(Boolean)
-  );
-
-  const inserts = [];
-
-  for (let r = 1; r < rows.length; r++) {
-    const cols = rows[r] || [];
-    const title = String(cols[iTitle] || "").trim();
-    const driveUrl = iUrl === -1 ? "" : String(cols[iUrl] || "").trim();
-    const tags = iTags === -1 ? [] : normalizeTagsInput(String(cols[iTags] || ""));
-
-    if (!title) continue;
-    if (existingTitles.has(title.toLowerCase())) continue;
-
-    inserts.push({
-      user_id: currentUser.id,
-      workspace_id: currentWorkspaceId,
-      title,
-      tags,
-      drive_url: driveUrl || null,
-      updated_at: new Date().toISOString(),
-    });
-
-    existingTitles.add(title.toLowerCase());
-  }
-
-  if (!inserts.length) return setStatus("Geen nieuwe rijen om te importeren (of alles waren dubbels).", "muted");
-
-  const btn = document.getElementById("btnImport");
-  btn.disabled = true;
-
-  try {
-    setStatus("Import bezig…", "muted");
-    const { error } = await sb.from("recipes").insert(inserts);
-    if (error) throw error;
-
-    setStatus(`Import klaar: ${inserts.length} recepten toegevoegd.`, "ok");
-    await renderDocs();
-  } catch (e) {
-    setStatus("Import fout: " + (e?.message || e), "err");
-  } finally {
-    btn.disabled = false;
-    document.getElementById("csvFile").value = "";
-  }
-}
-
-// ==============================
-// Delegation voor knoppen in lijsten
+// Click delegation (Open/Drive robuust)
 // ==============================
 function wireListsDelegation() {
-  // Zoekresultaten: Open
-  document.getElementById("resultsList").addEventListener("click", async (e) => {
-    const btn = e.target.closest("button[data-open]");
-    if (!btn) return;
+  const resultsList = el("resultsList");
+  const docsList = el("docsList");
 
-    try {
+  if (resultsList) {
+    resultsList.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-open]");
+      if (!btn) return;
       const id = btn.getAttribute("data-open");
-      setStatus("Recept laden…", "muted");
-      const doc = await loadRecipe(id);
-      if (!doc) return;
+      openRecipeInEditor(id);
+    });
+  }
 
-      currentRecipeId = doc.id;
-      currentRecipe = doc;
+  if (docsList) {
+    docsList.addEventListener("click", (e) => {
+      const openBtn = e.target.closest("button[data-open]");
+      const driveBtn = e.target.closest("button[data-opendrive]");
+      if (!openBtn && !driveBtn) return;
 
-      document.getElementById("editorTitle").textContent = `Editor (ID: ${doc.id})`;
-      document.getElementById("title").value = doc.title || "";
-      document.getElementById("tags").value = tagsToText(doc.tags || []);
-      document.getElementById("driveUrl").value = doc.drive_url || "";
-      document.getElementById("docFile").value = "";
-
-      updateEditorDocControls();
-      setStatus("", "muted");
-    } catch (err) {
-      setStatus("Openen mislukt: " + (err?.message || err), "err");
-    }
-  });
-
-  // Receptenlijst: Open, Open document, Drive
-  document.getElementById("docsList").addEventListener("click", async (e) => {
-    const openBtn = e.target.closest("button[data-open]");
-    const openFileBtn = e.target.closest("button[data-openfile]");
-    const openDriveBtn = e.target.closest("button[data-opendrive]");
-    if (!openBtn && !openFileBtn && !openDriveBtn) return;
-
-    try {
       if (openBtn) {
         const id = openBtn.getAttribute("data-open");
-        setStatus("Recept laden…", "muted");
-        const doc = await loadRecipe(id);
-        if (!doc) return;
-
-        currentRecipeId = doc.id;
-        currentRecipe = doc;
-
-        document.getElementById("editorTitle").textContent = `Editor (ID: ${doc.id})`;
-        document.getElementById("title").value = doc.title || "";
-        document.getElementById("tags").value = tagsToText(doc.tags || []);
-        document.getElementById("driveUrl").value = doc.drive_url || "";
-        document.getElementById("docFile").value = "";
-
-        updateEditorDocControls();
-        setStatus("", "muted");
+        openRecipeInEditor(id);
         return;
       }
-
-      if (openFileBtn) {
-        const id = openFileBtn.getAttribute("data-openfile");
-        const r = (currentRecipe && String(currentRecipe.id) === String(id)) ? currentRecipe : await loadRecipe(id);
-        await openRecipeDocument(r);
-        return;
-      }
-
-      if (openDriveBtn) {
-        const id = openDriveBtn.getAttribute("data-opendrive");
-        const r = (currentRecipe && String(currentRecipe.id) === String(id)) ? currentRecipe : await loadRecipe(id);
+      if (driveBtn) {
+        const id = driveBtn.getAttribute("data-opendrive");
+        const r = findCachedRecipeById(id);
         const url = toDriveOpenUrl(r?.drive_url);
         if (!url) return setStatus("Geen Drive-link aanwezig.", "muted");
         window.open(url, "_blank", "noopener");
       }
-    } catch (err) {
-      setStatus("Actie mislukt: " + (err?.message || err), "err");
+    });
+  }
+}
+
+function openRecipeInEditor(id) {
+  try {
+    const r = findCachedRecipeById(id);
+    if (!r) return setStatus("Recept niet gevonden in cache. Herlaad de lijst.", "err");
+
+    currentRecipeId = r.id;
+    currentRecipe = r;
+
+    const editorTitle = el("editorTitle");
+    if (editorTitle) editorTitle.textContent = `Editor (ID: ${r.id})`;
+
+    if (el("title")) el("title").value = r.title || "";
+    if (el("tags")) el("tags").value = tagsToText(r.tags || []);
+    if (el("driveUrl")) el("driveUrl").value = r.drive_url || "";
+
+    setStatus("", "muted");
+  } catch (err) {
+    setStatus("Openen mislukt: " + (err?.message || err), "err");
+  }
+}
+
+function wireFavoritesDelegation() {
+  const favList = el("favList");
+  if (!favList) return;
+
+  favList.addEventListener("click", (e) => {
+    const runBtn = e.target.closest("button[data-fav-run]");
+    const delBtn = e.target.closest("button[data-fav-del]");
+    if (!runBtn && !delBtn) return;
+
+    if (runBtn) {
+      const i = Number(runBtn.getAttribute("data-fav-run"));
+      const f = loadFavs()[i];
+      if (el("searchInput")) el("searchInput").value = f?.q || "";
+      runTagSearch();
+      return;
+    }
+    if (delBtn) {
+      const i = Number(delBtn.getAttribute("data-fav-del"));
+      const favs = loadFavs();
+      favs.splice(i, 1);
+      saveFavs(favs);
+      renderFavs();
     }
   });
 }
@@ -885,9 +635,7 @@ async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
   try {
     await navigator.serviceWorker.register("./sw.js");
-  } catch {
-    // negeren
-  }
+  } catch {}
 }
 
 // ==============================
@@ -899,125 +647,64 @@ window.addEventListener("DOMContentLoaded", async () => {
   wireListsDelegation();
   wireFavoritesDelegation();
 
-  // Auth
-  document.getElementById("btnLogin").addEventListener("click", loginWithMagicLink);
-  document.getElementById("btnLogout").addEventListener("click", logout);
+  el("btnLogin")?.addEventListener("click", loginWithMagicLink);
+  el("btnLogout")?.addEventListener("click", logout);
 
-  // New/Clear
-  document.getElementById("btnNew").addEventListener("click", () => {
+  el("btnNew")?.addEventListener("click", () => {
     clearEditor();
     setStatus("Nieuw recept: vul velden in en klik Opslaan.", "muted");
   });
 
-  document.getElementById("btnClear").addEventListener("click", () => {
+  el("btnClear")?.addEventListener("click", () => {
     clearEditor();
     setStatus("Leeggemaakt.", "muted");
   });
 
-  // Search
-  document.getElementById("btnSearch").addEventListener("click", runTagSearch);
-  document.getElementById("searchInput").addEventListener("keydown", (e) => {
+  el("btnSearch")?.addEventListener("click", runTagSearch);
+  el("searchInput")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") runTagSearch();
   });
 
-  document.getElementById("btnTitleSearch").addEventListener("click", runTitleSearch);
-  document.getElementById("titleSearchInput").addEventListener("keydown", (e) => {
+  el("btnTitleSearch")?.addEventListener("click", runTitleSearch);
+  el("titleSearchInput")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") runTitleSearch();
   });
 
-  // Favorites
-  document.getElementById("btnSaveFav").addEventListener("click", saveFavoriteSearch);
-
-  // CSV
-  document.getElementById("btnImport").addEventListener("click", () => document.getElementById("csvFile").click());
-  document.getElementById("csvFile").addEventListener("change", async (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const text = await f.text();
-    await importCsvText(text);
-  });
-
-  // Editor controls
-  document.getElementById("docFile").addEventListener("change", () => updateEditorDocControls());
-
-  document.getElementById("btnOpenDoc").addEventListener("click", async () => {
-    try {
-      requireWorkspace();
-      if (!currentRecipeId) return setStatus("Open eerst een recept.", "err");
-      const r = currentRecipe || (await loadRecipe(currentRecipeId));
-      await openRecipeDocument(r);
-    } catch (e) {
-      setStatus("Openen mislukt: " + (e?.message || e), "err");
-    }
-  });
-
-  document.getElementById("btnOpenDrive").addEventListener("click", async () => {
-    try {
-      if (!currentRecipeId) return setStatus("Open eerst een recept.", "err");
-      const r = currentRecipe || (await loadRecipe(currentRecipeId));
-      const url = toDriveOpenUrl(r?.drive_url);
-      if (!url) return setStatus("Geen Drive-link aanwezig voor dit recept.", "muted");
-      window.open(url, "_blank", "noopener");
-    } catch (e) {
-      setStatus("Drive openen mislukt: " + (e?.message || e), "err");
-    }
-  });
-
-  document.getElementById("btnRemoveDoc").addEventListener("click", async () => {
-    try {
-      requireWorkspace();
-      if (!currentRecipeId) return setStatus("Open eerst een recept.", "err");
-      const r = currentRecipe || (await loadRecipe(currentRecipeId));
-      if (!r?.file_path) return setStatus("Er is geen document gekoppeld.", "muted");
-      if (!confirm("Gekoppeld document verwijderen?")) return;
-
-      setStatus("Document verwijderen…", "muted");
-      await removeRecipeDocument(r);
-      currentRecipe = { ...(r || {}), file_path: null, file_name: null, mime_type: null };
-      updateEditorDocControls();
-      await renderDocs();
-      setStatus("Document verwijderd.", "ok");
-    } catch (e) {
-      setStatus("Verwijderen mislukt: " + (e?.message || e), "err");
-    }
-  });
+  el("btnSaveFav")?.addEventListener("click", saveFavoriteSearch);
 
   // Save
-  document.getElementById("btnSave").addEventListener("click", async () => {
+  el("btnSave")?.addEventListener("click", async () => {
     try {
       requireWorkspace();
 
-      const title = document.getElementById("title").value.trim();
-      const tags = normalizeTagsInput(document.getElementById("tags").value);
-      const drive_url = document.getElementById("driveUrl").value.trim();
-      const file = document.getElementById("docFile").files?.[0] || null;
+      const title = (el("title")?.value || "").trim();
+      const tags = normalizeTagsInput(el("tags")?.value || "");
+      const drive_url = (el("driveUrl")?.value || "").trim();
 
       if (!title) return setStatus("Titel is verplicht.", "err");
 
-      const hasExistingFile = !!(currentRecipe?.file_path && String(currentRecipe.file_path).trim());
-      if (!file && !hasExistingFile) {
-        return setStatus("Kies een document om te uploaden (of open een bestaand recept met document).", "err");
-      }
-
       setStatus("Opslaan…", "muted");
-
-      // 1) upsert recipe
       const id = await upsertRecipe({ title, tags, drive_url });
+
       currentRecipeId = id;
 
-      // 2) upload if needed
-      if (file) {
-        setStatus("Uploaden naar cloud storage…", "muted");
-        const info = await uploadAndAttachDocument({ recipeId: id, file });
-        currentRecipe = { ...(currentRecipe || {}), id, title, tags, drive_url: drive_url || null, ...info };
-      } else {
-        currentRecipe = { ...(currentRecipe || {}), id, title, tags, drive_url: drive_url || null };
-      }
+      // Update cache object locally (zonder extra fetch)
+      const existing = findCachedRecipeById(id);
+      const newObj = {
+        ...(existing || {}),
+        id,
+        title,
+        tags,
+        drive_url: drive_url || null,
+        workspace_id: currentWorkspaceId,
+        updated_at: new Date().toISOString(),
+      };
 
-      document.getElementById("editorTitle").textContent = `Editor (ID: ${id})`;
-      document.getElementById("docFile").value = "";
-      document.getElementById("driveUrl").value = drive_url;
-      updateEditorDocControls();
+      cacheRecipes = [newObj, ...cacheRecipes.filter((r) => String(r.id) !== String(id))];
+      currentRecipe = newObj;
+
+      const editorTitle = el("editorTitle");
+      if (editorTitle) editorTitle.textContent = `Editor (ID: ${id})`;
 
       await renderDocs();
       setStatus("Opgeslagen.", "ok");
@@ -1027,7 +714,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   // Delete
-  document.getElementById("btnDelete").addEventListener("click", async () => {
+  el("btnDelete")?.addEventListener("click", async () => {
     try {
       requireWorkspace();
       if (!currentRecipeId) return setStatus("Open eerst een recept om te verwijderen.", "err");
@@ -1036,6 +723,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       setStatus("Verwijderen…", "muted");
       await deleteRecipe();
 
+      cacheRecipes = cacheRecipes.filter((r) => String(r.id) !== String(currentRecipeId));
       clearEditor();
       await renderDocs();
       setStatus("Verwijderd.", "ok");
@@ -1044,18 +732,15 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // Auth state
+  // Auth init
   await refreshAuth();
 
   sb.auth.onAuthStateChange(async () => {
     await refreshAuth();
     await renderDocs();
-
-    // nu pas (na session verwerking) tokens uit de URL hash opruimen
     cleanAuthHashFromUrl();
   });
 
   await renderDocs();
-  updateEditorDocControls();
   setStatus("", "muted");
 });
