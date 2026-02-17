@@ -97,6 +97,27 @@ a{color:inherit}
   box-shadow: 0 10px 30px rgba(0,0,0,.25);
 }
 
+/* Admin */
+.adminHeader{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+.adminGrid{
+  display:grid;
+  gap:12px;
+  grid-template-columns: 1.2fr 1fr 0.6fr;
+  margin-top:10px;
+}
+.adminActions{
+  display:flex;
+  align-items:end;
+}
+@media (max-width: 900px){
+  .adminGrid{ grid-template-columns: 1fr; }
+}
+
 /* ============ Typography ============ */
 h2{margin:0 0 10px 0; font-size:18px}
 h3{margin:10px 0 8px 0; font-size:14px; color:#d1d5db}
@@ -107,7 +128,7 @@ h3{margin:10px 0 8px 0; font-size:14px; color:#d1d5db}
 .spacer{height:12px}
 
 /* ============ Inputs ============ */
-.input, textarea, input[type="file"]{
+.input, textarea, input[type="file"], select{
   width:100%;
   border-radius:12px;
   border:1px solid var(--line);
