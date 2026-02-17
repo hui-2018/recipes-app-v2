@@ -8,6 +8,46 @@
   <link rel="manifest" href="./manifest.json" />
   <meta name="theme-color" content="#0b1220" />
   <link rel="stylesheet" href="./styles.css" />
+
+  <!-- Compact topbar auth layout -->
+  <style>
+    .topActions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .authGroup {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .authGroup .input {
+      padding: 8px 10px;
+      height: 38px;
+      line-height: 38px;
+    }
+
+    #email { width: 220px; max-width: 70vw; }
+    #password { width: 160px; max-width: 50vw; }
+
+    .authGroup .btn {
+      padding: 8px 10px;
+      height: 38px;
+      line-height: 38px;
+      white-space: nowrap;
+    }
+
+    /* Op kleine schermen: inputs iets smaller */
+    @media (max-width: 520px) {
+      #email { width: 180px; }
+      #password { width: 140px; }
+    }
+  </style>
 </head>
 
 <body>
@@ -17,14 +57,18 @@
       <div class="brandText">
         <div class="brandTitle">Recepten DB</div>
         <div class="brandSub">Cloud sync via Supabase</div>
-        <div class="brandSub muted" id="authInfo">Niet ingelogd</div>
       </div>
     </div>
 
     <div class="topActions">
-      <input id="email" class="input" type="email" placeholder="jij@voorbeeld.be" autocomplete="email" />
-      <button id="btnLogin" class="btn secondary">Login link</button>
-      <button id="btnLogout" class="btn secondary" style="display:none;">Logout</button>
+      <!-- Compact auth group -->
+      <div class="authGroup">
+        <input id="email" class="input" type="email" placeholder="jij@voorbeeld.be" autocomplete="email" />
+        <input id="password" class="input" type="password" placeholder="Wachtwoord" autocomplete="current-password" />
+        <button id="btnLogin" class="btn secondary">Login</button>
+        <button id="btnRegister" class="btn secondary" title="Maak een nieuw account aan">Registreer</button>
+        <button id="btnLogout" class="btn secondary" style="display:none;">Logout</button>
+      </div>
 
       <input id="csvFile" type="file" accept=".csv,text/csv" style="display:none" />
       <button id="btnImport" class="btn secondary" title="Importeer title,tags (en optioneel drive_url) uit CSV">Import CSV</button>
@@ -33,89 +77,95 @@
     </div>
   </header>
 
-  <main class="grid">
-    <!-- Zoeken -->
-    <section class="card">
-      <h2>Zoeken</h2>
-
-      <!-- TAGS ZOEKEN -->
-      <div class="formRow">
-        <input id="searchInput" class="input" type="text"
-               placeholder='Zoek in tags/labels (bv. "pasta" of "vega")' />
-        <button id="btnSearch" class="btn secondary">Zoek tags</button>
-      </div>
-
-      <!-- TITEL ZOEKEN -->
-      <div class="formRow">
-        <input id="titleSearchInput" class="input" type="text"
-               placeholder='Zoek in titels (bv. "tonijn")' />
-        <button id="btnTitleSearch" class="btn secondary">Zoek titel</button>
-      </div>
-
-      <div class="formRow">
-        <input id="favName" class="input" type="text" placeholder='Naam voor favoriet (bv. Snelle pasta)' />
-        <button id="btnSaveFav" class="btn secondary">Bewaar favoriet</button>
-      </div>
-
-      <div class="cols2">
-        <div>
-          <h3>Favoriete zoekopdrachten</h3>
-          <ul id="favList" class="list muted"><li>Nog geen favorieten.</li></ul>
-        </div>
-
-        <div>
-          <h3>Resultaten</h3>
-          <div id="resultsMeta" class="muted"></div>
-          <ul id="resultsList" class="list"></ul>
-        </div>
-      </div>
-    </section>
-
-    <!-- Recepten -->
-    <section class="card">
-      <h2>Recepten</h2>
-      <div id="docsMeta" class="muted"></div>
-      <ul id="docsList" class="list"></ul>
-    </section>
-
-    <!-- Editor -->
-    <section class="card">
-      <h2 id="editorTitle">Editor</h2>
-
-      <label class="label">Titel</label>
-      <input id="title" class="input" type="text" placeholder="Bv. Spaghetti aglio e olio" />
-
-      <label class="label">Tags / labels (komma-gescheiden)</label>
-      <input id="tags" class="input" type="text" placeholder="bv. pasta, snel, vega" />
-
-      <label class="label">Document (PDF / Word / …) in cloud storage</label>
-      <input id="docFile" class="input" type="file" />
-      <div class="hint muted" id="docHint">
-        Kies een bestand om te uploaden naar Supabase Storage. Na opslaan kan je het met één klik openen.
-      </div>
-
-      <details class="hint muted" style="margin-top:10px">
-        <summary>Oude Google Drive link (optioneel, enkel voor migratie)</summary>
-        <div style="margin-top:8px">
-          <input id="driveUrl" class="input" type="url" placeholder="Plak hier eventueel een oude Drive-link" />
-          <div class="hint muted">Niet nodig als je het document uploadt via het veld hierboven.</div>
-        </div>
-      </details>
-
-      <!-- Knoppen voor documenten -->
-      <div class="btnRow" style="margin-top:10px">
-        <button id="btnOpenDoc" class="btn secondary" style="display:none;">Open document</button>
-        <button id="btnOpenDrive" class="btn secondary" style="display:none;">Open Drive</button>
-        <button id="btnRemoveDoc" class="btn secondary" style="display:none;">Verwijder document</button>
-      </div>
-
-      <div class="btnRow">
-        <button id="btnDelete" class="btn danger">Verwijder</button>
-        <button id="btnClear" class="btn secondary">Leegmaken</button>
-        <button id="btnSave" class="btn primary">Opslaan</button>
-      </div>
-
+  <main class="wrap">
+    <div class="statusRow">
+      <div id="authInfo" class="muted">Niet ingelogd</div>
       <div id="status" class="status muted"></div>
+    </div>
+
+    <section class="grid">
+      <aside class="panel">
+        <h2>Zoeken</h2>
+
+        <label class="label">Zoek op tags</label>
+        <input id="searchInput" class="input" placeholder="pasta" />
+        <button id="btnSearch" class="btn secondary full">Zoek tags</button>
+
+        <div class="spacer"></div>
+
+        <label class="label">Zoek op titel</label>
+        <input id="titleSearchInput" class="input" placeholder="tonijn" />
+        <button id="btnTitleSearch" class="btn secondary full">Zoek titel</button>
+
+        <div class="spacer"></div>
+
+        <label class="label">Naam voor favoriet (bv. Snelle pasta)</label>
+        <input id="favName" class="input" placeholder="Naam voor favoriet (bv. Snelle pasta)" />
+        <button id="btnSaveFav" class="btn secondary full">Bewaar favoriet</button>
+
+        <div class="spacer"></div>
+
+        <h3>Favoriete zoekopdrachten</h3>
+        <ul id="favList" class="list">
+          <li class="muted">Nog geen favorieten.</li>
+        </ul>
+      </aside>
+
+      <section class="panel">
+        <h2>Resultaten</h2>
+        <div id="resultsMeta" class="muted"></div>
+        <ul id="resultsList" class="list"></ul>
+
+        <div class="spacer"></div>
+
+        <h2>Recepten</h2>
+        <div id="docsMeta" class="muted"></div>
+        <ul id="docsList" class="list"></ul>
+      </section>
+
+      <section class="panel">
+        <h2 id="editorTitle">Editor</h2>
+
+        <label class="label">Titel</label>
+        <input id="title" class="input" placeholder="Titel" />
+
+        <label class="label">Tags / labels (komma-gescheiden)</label>
+        <input id="tags" class="input" placeholder="snel, pasta, vegetarisch" />
+
+        <div class="spacer"></div>
+
+        <label class="label">Document (PDF / Word / ...) in cloud storage</label>
+        <input id="docFile" class="input" type="file" />
+
+        <div id="docHint" class="muted small">
+          Kies een bestand. Bij Opslaan wordt eerst het recept opgeslagen en daarna het document geüpload.
+        </div>
+
+        <div class="row">
+          <button id="btnOpenDoc" class="btn secondary">Open document</button>
+          <button id="btnRemoveDoc" class="btn secondary">Verwijder document</button>
+        </div>
+
+        <div class="spacer"></div>
+
+        <details>
+          <summary>Oude Google Drive link (optioneel, enkel voor migratie)</summary>
+          <label class="label">Drive link</label>
+          <input id="driveUrl" class="input" placeholder="https://drive.google.com/..." />
+        </details>
+
+        <div class="row">
+          <button id="btnOpenDrive" class="btn secondary">Drive</button>
+        </div>
+
+        <div class="spacer"></div>
+
+        <div class="row">
+          <button id="btnSave" class="btn primary">Opslaan</button>
+          <button id="btnDelete" class="btn danger">Verwijder</button>
+          <button id="btnClear" class="btn secondary">Leegmaken</button>
+        </div>
+      </section>
     </section>
   </main>
 
