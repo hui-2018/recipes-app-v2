@@ -111,12 +111,11 @@ function findCachedRecipeById(id) {
 
 // ==============================
 // Auth (email + password)
-// Vereist: Supabase Email provider aan, Confirm email uit (voor jouw setup)
+// Vereist: Email provider aan + Confirm email UIT (zoals je ingesteld hebt)
 // ==============================
 async function loginWithPassword() {
   const email = (el("email")?.value || "").trim();
   const password = (el("password")?.value || "").trim();
-
   if (!email || !password) return setStatus("Vul email en wachtwoord in.", "err");
 
   try {
@@ -132,7 +131,6 @@ async function loginWithPassword() {
 async function registerWithPassword() {
   const email = (el("email")?.value || "").trim();
   const password = (el("password")?.value || "").trim();
-
   if (!email || !password) return setStatus("Vul email en wachtwoord in.", "err");
 
   try {
@@ -346,7 +344,6 @@ async function deleteRecipe() {
   requireWorkspace();
   if (!currentRecipeId) return;
 
-  // best effort: verwijder file
   try {
     const r = currentRecipe || findCachedRecipeById(currentRecipeId);
     if (r?.file_path) await sb.storage.from(STORAGE_BUCKET).remove([r.file_path]);
@@ -399,7 +396,6 @@ async function uploadAndAttachDocument({ recipeId, file }) {
   if (!recipeId) throw new Error("Geen recept-ID.");
   if (!file) throw new Error("Geen bestand gekozen.");
 
-  // oude file verwijderen (best effort)
   try {
     const existing = currentRecipe || findCachedRecipeById(recipeId);
     if (existing?.file_path) await sb.storage.from(STORAGE_BUCKET).remove([existing.file_path]);
@@ -408,7 +404,6 @@ async function uploadAndAttachDocument({ recipeId, file }) {
   let path = buildStoragePath({ workspaceId: currentWorkspaceId, recipeId, fileName: file.name });
   const contentType = inferContentType(file);
 
-  // simpele retry bij “exists”
   for (let attempt = 0; attempt < 3; attempt++) {
     const { error } = await sb.storage
       .from(STORAGE_BUCKET)
@@ -444,7 +439,6 @@ async function uploadAndAttachDocument({ recipeId, file }) {
 // UI rendering
 // ==============================
 function updateEditorDocControls() {
-  // Guard: deze editor-controls bestaan niet altijd in elke HTML versie
   const openBtn = el("btnOpenDoc");
   const rmBtn = el("btnRemoveDoc");
   const driveBtn = el("btnOpenDrive");
@@ -472,7 +466,7 @@ function updateEditorDocControls() {
     return;
   }
   if (hasFile) {
-    hint.textContent = `Gekoppeld document: ${currentRecipe.file_name || "(document)"}.`;
+    hint.textContent = `Gekoppeld document: ${currentRecipe.file_name || "(document)"} (openen/vervangen kan).`;
   } else {
     hint.textContent = "Nog geen document gekoppeld. Kies een bestand en klik Opslaan.";
   }
@@ -740,7 +734,23 @@ window.addEventListener("DOMContentLoaded", async () => {
   // Favorites
   el("btnSaveFav")?.addEventListener("click", saveFavoriteSearch);
 
-  // Doc editor buttons (bestaan niet altijd)
+  // CSV import
+  el("btnImport")?.addEventListener("click", () => el("csvFile")?.click());
+  el("csvFile")?.addEventListener("change", async (e) => {
+    try {
+      requireWorkspace();
+      const f = e.target.files?.[0];
+      if (!f) return;
+      const csvText = await f.text();
+      await importCsvText(csvText);
+    } catch (err) {
+      setStatus("Import fout: " + (err?.message || err), "err");
+    } finally {
+      if (el("csvFile")) el("csvFile").value = "";
+    }
+  });
+
+  // Doc editor buttons
   el("btnOpenDoc")?.addEventListener("click", async () => {
     try {
       requireWorkspace();
@@ -774,8 +784,13 @@ window.addEventListener("DOMContentLoaded", async () => {
       setStatus("Document verwijderen…", "muted");
       await removeRecipeDocument(r);
 
-      // update local cache
-      const updated = { ...(r || {}), file_path: null, file_name: null, mime_type: null, updated_at: new Date().toISOString() };
+      const updated = {
+        ...(r || {}),
+        file_path: null,
+        file_name: null,
+        mime_type: null,
+        updated_at: new Date().toISOString(),
+      };
       cacheRecipes = cacheRecipes.map((x) => (String(x.id) === String(updated.id) ? updated : x));
       currentRecipe = updated;
 
@@ -800,20 +815,15 @@ window.addEventListener("DOMContentLoaded", async () => {
       if (!title) return setStatus("Titel is verplicht.", "err");
 
       const hasExistingFile = !!(currentRecipe?.file_path && String(currentRecipe.file_path).trim());
-
-      // Als jouw app altijd een document vereist, laat dit aan.
-      // Als je recepten zonder document wil toelaten, comment dan deze block uit.
       if (!file && !hasExistingFile) {
         return setStatus("Kies een document om te uploaden (of open een bestaand recept met document).", "err");
       }
 
       setStatus("Opslaan…", "muted");
 
-      // 1) save recipe (zonder doc velden)
       const id = await upsertRecipe({ title, tags, drive_url });
       currentRecipeId = id;
 
-      // 2) upload doc indien gekozen
       let docInfo = {};
       if (file) {
         setStatus("Uploaden naar cloud storage…", "muted");
@@ -821,7 +831,6 @@ window.addEventListener("DOMContentLoaded", async () => {
         if (el("docFile")) el("docFile").value = "";
       }
 
-      // 3) update local cache object
       const existing = findCachedRecipeById(id);
       const updated = {
         ...(existing || {}),
@@ -834,7 +843,6 @@ window.addEventListener("DOMContentLoaded", async () => {
         ...(docInfo || {}),
       };
 
-      // keep file fields if no new upload and existing had them
       if (!file && existing?.file_path) {
         updated.file_path = existing.file_path;
         updated.file_name = existing.file_name;
@@ -873,7 +881,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // Init auth + data
+  // Auth init + data
   await refreshAuth();
 
   sb.auth.onAuthStateChange(async () => {
@@ -885,3 +893,114 @@ window.addEventListener("DOMContentLoaded", async () => {
   updateEditorDocControls();
   setStatus("", "muted");
 });
+
+// ==============================
+// CSV import (title,tags,drive_url)
+// ==============================
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cur = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const next = text[i + 1];
+
+    if (ch === '"' && next === '"') {
+      cur += '"';
+      i++;
+      continue;
+    }
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (!inQuotes && ch === ",") {
+      row.push(cur);
+      cur = "";
+      continue;
+    }
+
+    if (!inQuotes && (ch === "\n" || ch === "\r")) {
+      if (ch === "\r" && next === "\n") i++;
+      row.push(cur);
+      cur = "";
+      if (row.some((c) => String(c).trim() !== "")) rows.push(row);
+      row = [];
+      continue;
+    }
+    cur += ch;
+  }
+
+  if (cur.length || row.length) {
+    row.push(cur);
+    if (row.some((c) => String(c).trim() !== "")) rows.push(row);
+  }
+
+  return rows;
+}
+
+async function importCsvText(csvText) {
+  requireWorkspace();
+
+  const rows = parseCsv(csvText);
+  if (rows.length < 2) return setStatus("CSV bevat geen data.", "err");
+
+  const header = rows[0].map((h) => String(h || "").trim().toLowerCase());
+  const iTitle = header.indexOf("title");
+  const iTags = header.indexOf("tags");
+  const iUrl = header.indexOf("drive_url");
+
+  if (iTitle === -1) {
+    return setStatus('CSV moet minstens een kolom "title" hebben (en optioneel "tags" en/of "drive_url").', "err");
+  }
+
+  const existingTitles = new Set(
+    (cacheRecipes || [])
+      .map((r) => String(r.title || "").trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+  const inserts = [];
+
+  for (let r = 1; r < rows.length; r++) {
+    const cols = rows[r] || [];
+    const title = String(cols[iTitle] || "").trim();
+    const driveUrl = iUrl === -1 ? "" : String(cols[iUrl] || "").trim();
+    const tags = iTags === -1 ? [] : normalizeTagsInput(String(cols[iTags] || ""));
+
+    if (!title) continue;
+    if (existingTitles.has(title.toLowerCase())) continue;
+
+    inserts.push({
+      user_id: currentUser.id,
+      workspace_id: currentWorkspaceId,
+      title,
+      tags,
+      drive_url: driveUrl || null,
+      updated_at: new Date().toISOString(),
+    });
+
+    existingTitles.add(title.toLowerCase());
+  }
+
+  if (!inserts.length) return setStatus("Geen nieuwe rijen om te importeren (of alles waren dubbels).", "muted");
+
+  const btn = el("btnImport");
+  if (btn) btn.disabled = true;
+
+  try {
+    setStatus("Import bezig…", "muted");
+    const { error } = await sb.from("recipes").insert(inserts);
+    if (error) throw error;
+
+    setStatus(`Import klaar: ${inserts.length} recepten toegevoegd.`, "ok");
+    await renderDocs();
+  } catch (e) {
+    setStatus("Import fout: " + (e?.message || e), "err");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
