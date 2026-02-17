@@ -10,11 +10,9 @@ const SIGNED_URL_TTL_SECONDS = 60;
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ==============================
-// DOM helpers (veilig)
+// DOM helpers
 // ==============================
-function el(id) {
-  return document.getElementById(id);
-}
+function el(id) { return document.getElementById(id); }
 
 function setStatus(msg, kind = "") {
   const s = el("status");
@@ -28,9 +26,7 @@ function setAuthInfo(msg) {
   if (a) a.textContent = msg;
 }
 
-window.addEventListener("error", (e) => {
-  setStatus("JS fout: " + (e?.message || e), "err");
-});
+window.addEventListener("error", (e) => setStatus("JS fout: " + (e?.message || e), "err"));
 window.addEventListener("unhandledrejection", (e) => {
   const msg = e?.reason?.message || String(e?.reason || e);
   setStatus("Async fout: " + msg, "err");
@@ -41,7 +37,7 @@ window.addEventListener("unhandledrejection", (e) => {
 // ==============================
 let currentUser = null;
 let currentWorkspaceId = null;
-
+let currentRole = null; // 'owner' | 'member'
 let currentRecipeId = null;
 let currentRecipe = null;
 let cacheRecipes = [];
@@ -85,13 +81,10 @@ function inferContentType(file) {
 function toDriveOpenUrl(url) {
   const s = String(url || "").trim();
   if (!s) return "";
-
   const m1 = s.match(/\/d\/([^/]+)/);
   if (m1 && m1[1]) return `https://drive.google.com/open?id=${m1[1]}`;
-
   const m2 = s.match(/[?&]id=([^&]+)/);
   if (m2 && m2[1]) return `https://drive.google.com/open?id=${m2[1]}`;
-
   return s;
 }
 
@@ -111,7 +104,6 @@ function findCachedRecipeById(id) {
 
 // ==============================
 // Auth (email + password)
-// Vereist: Email provider aan + Confirm email UIT (zoals je ingesteld hebt)
 // ==============================
 async function loginWithPassword() {
   const email = (el("email")?.value || "").trim();
@@ -153,19 +145,30 @@ async function logout() {
 }
 
 // ==============================
-// Workspace
+// Workspace + role
 // ==============================
-async function loadMyWorkspaceId() {
+async function loadMyWorkspaceAndRole() {
   const { data, error } = await sb
     .from("workspace_members")
-    .select("workspace_id")
+    .select("workspace_id, role")
     .eq("user_id", currentUser.id)
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
 
   if (error) throw error;
-  return data?.workspace_id || null;
+  return { workspace_id: data?.workspace_id || null, role: data?.role || null };
+}
+
+function updateAdminVisibility() {
+  const btnAdmin = el("btnAdmin");
+  const panel = el("adminPanel");
+  if (!btnAdmin || !panel) return;
+
+  const isOwner = currentRole === "owner";
+  btnAdmin.style.display = isOwner ? "" : "none";
+
+  if (!isOwner) panel.style.display = "none";
 }
 
 async function refreshAuth() {
@@ -178,7 +181,10 @@ async function refreshAuth() {
     setAuthInfo(`Ingelogd als ${currentUser.email}`);
 
     try {
-      currentWorkspaceId = await loadMyWorkspaceId();
+      const ws = await loadMyWorkspaceAndRole();
+      currentWorkspaceId = ws.workspace_id;
+      currentRole = ws.role;
+
       if (!currentWorkspaceId) {
         setStatus("Je bent ingelogd, maar dit account is nog niet toegevoegd aan een workspace.", "err");
       } else {
@@ -186,31 +192,76 @@ async function refreshAuth() {
       }
     } catch (e) {
       currentWorkspaceId = null;
+      currentRole = null;
       setStatus("Workspace ophalen mislukt: " + (e?.message || e), "err");
     }
   } else {
     if (btnLogout) btnLogout.style.display = "none";
     setAuthInfo("Niet ingelogd");
     currentWorkspaceId = null;
+    currentRole = null;
   }
 
+  updateAdminVisibility();
   renderFavs();
   updateEditorDocControls();
 }
 
 // ==============================
-// Favorites (localStorage) - per workspace
+// Admin actions (Edge Function)
 // ==============================
-function favKey() {
-  return `recepten_favs_${currentWorkspaceId || "no_ws"}`;
+function openAdminPanel() {
+  const panel = el("adminPanel");
+  if (panel) panel.style.display = "";
+}
+function closeAdminPanel() {
+  const panel = el("adminPanel");
+  if (panel) panel.style.display = "none";
 }
 
-function loadFavs() {
+async function adminAddUser() {
+  requireWorkspace();
+  if (currentRole !== "owner") throw new Error("Alleen owners mogen users toevoegen.");
+
+  const email = (el("adminEmail")?.value || "").trim();
+  const password = (el("adminPassword")?.value || "").trim();
+  const role = (el("adminRole")?.value || "member").trim();
+
+  if (!email) return setStatus("Admin: vul een e-mail in.", "err");
+  if (role !== "member" && role !== "owner") return setStatus("Admin: ongeldige rol.", "err");
+
   try {
-    return JSON.parse(localStorage.getItem(favKey()) || "[]");
-  } catch {
-    return [];
+    setStatus("Admin: user toevoegen…", "muted");
+
+    const { data, error } = await sb.functions.invoke("add-user-to-workspace", {
+      body: {
+        workspace_id: currentWorkspaceId,
+        email,
+        password: password || null,
+        role
+      }
+    });
+
+    if (error) throw error;
+    if (data?.ok) {
+      setStatus(`Admin: ${email} toegevoegd (${role}).`, "ok");
+      if (el("adminPassword")) el("adminPassword").value = "";
+    } else {
+      throw new Error(data?.error || "Onbekende fout in Edge Function.");
+    }
+  } catch (e) {
+    setStatus("Admin fout: " + (e?.message || e), "err");
   }
+}
+
+// ==============================
+// Favorites (localStorage) - per workspace
+// ==============================
+function favKey() { return `recepten_favs_${currentWorkspaceId || "no_ws"}`; }
+
+function loadFavs() {
+  try { return JSON.parse(localStorage.getItem(favKey()) || "[]"); }
+  catch { return []; }
 }
 
 function saveFavs(favs) {
@@ -236,24 +287,20 @@ function renderFavs() {
     return;
   }
 
-  list.innerHTML = favs
-    .map(
-      (f, idx) => `
-      <li class="item">
-        <div class="itemTop">
-          <div>
-            <strong>${escapeHtml(f.name)}</strong>
-            <div class="muted">Zoekterm (tags): ${escapeHtml(f.q)}</div>
-          </div>
-          <div class="actions">
-            <button class="btn small secondary" data-fav-run="${idx}">Run</button>
-            <button class="btn small danger" data-fav-del="${idx}">X</button>
-          </div>
+  list.innerHTML = favs.map((f, idx) => `
+    <li class="item">
+      <div class="itemTop">
+        <div>
+          <strong>${escapeHtml(f.name)}</strong>
+          <div class="muted">Zoekterm (tags): ${escapeHtml(f.q)}</div>
         </div>
-      </li>
-    `
-    )
-    .join("");
+        <div class="actions">
+          <button class="btn small secondary" data-fav-run="${idx}">Run</button>
+          <button class="btn small danger" data-fav-del="${idx}">X</button>
+        </div>
+      </div>
+    </li>
+  `).join("");
 }
 
 function wireFavoritesDelegation() {
@@ -272,7 +319,6 @@ function wireFavoritesDelegation() {
       runTagSearch();
       return;
     }
-
     if (delBtn) {
       const i = Number(delBtn.getAttribute("data-fav-del"));
       const favs = loadFavs();
@@ -284,7 +330,7 @@ function wireFavoritesDelegation() {
 }
 
 // ==============================
-// Data access (workspace-scoped)
+// Data access
 // ==============================
 async function fetchRecipes() {
   if (!currentUser || !currentWorkspaceId) {
@@ -405,10 +451,7 @@ async function uploadAndAttachDocument({ recipeId, file }) {
   const contentType = inferContentType(file);
 
   for (let attempt = 0; attempt < 3; attempt++) {
-    const { error } = await sb.storage
-      .from(STORAGE_BUCKET)
-      .upload(path, file, { contentType, upsert: false });
-
+    const { error } = await sb.storage.from(STORAGE_BUCKET).upload(path, file, { contentType, upsert: false });
     if (!error) break;
 
     const msg = String(error.message || "").toLowerCase();
@@ -436,7 +479,7 @@ async function uploadAndAttachDocument({ recipeId, file }) {
 }
 
 // ==============================
-// UI rendering
+// UI
 // ==============================
 function updateEditorDocControls() {
   const openBtn = el("btnOpenDoc");
@@ -452,24 +495,12 @@ function updateEditorDocControls() {
   if (driveBtn) driveBtn.style.display = hasDrive ? "" : "none";
 
   if (!hint) return;
+  if (!currentUser) { hint.textContent = "Login om documenten te beheren."; return; }
+  if (!currentWorkspaceId) { hint.textContent = "Je account zit nog niet in een workspace."; return; }
+  if (!currentRecipeId) { hint.textContent = "Je kan opslaan zonder bestand. Kies enkel een file als je wil uploaden/vervangen."; return; }
 
-  if (!currentUser) {
-    hint.textContent = "Login om documenten te uploaden naar cloud storage.";
-    return;
-  }
-  if (!currentWorkspaceId) {
-    hint.textContent = "Je account zit nog niet in een workspace. Voeg het toe als member.";
-    return;
-  }
-  if (!currentRecipeId) {
-    hint.textContent = "Kies een bestand. Bij Opslaan wordt eerst het recept opgeslagen en daarna het document geüpload.";
-    return;
-  }
-  if (hasFile) {
-    hint.textContent = `Gekoppeld document: ${currentRecipe.file_name || "(document)"} (openen/vervangen kan).`;
-  } else {
-    hint.textContent = "Nog geen document gekoppeld. Kies een bestand en klik Opslaan.";
-  }
+  if (hasFile) hint.textContent = `Gekoppeld document: ${currentRecipe.file_name || "(document)"} (openen/vervangen kan).`;
+  else hint.textContent = "Geen document gekoppeld. Dat is ok; je kan later uploaden.";
 }
 
 function clearEditor() {
@@ -490,16 +521,8 @@ async function renderDocs() {
   const list = el("docsList");
   if (!meta || !list) return;
 
-  if (!currentUser) {
-    meta.textContent = "Login om je recepten te zien.";
-    list.innerHTML = "";
-    return;
-  }
-  if (!currentWorkspaceId) {
-    meta.textContent = "Je account zit nog niet in een workspace.";
-    list.innerHTML = "";
-    return;
-  }
+  if (!currentUser) { meta.textContent = "Login om je recepten te zien."; list.innerHTML = ""; return; }
+  if (!currentWorkspaceId) { meta.textContent = "Je account zit nog niet in een workspace."; list.innerHTML = ""; return; }
 
   try {
     const docs = await fetchRecipes();
@@ -510,32 +533,30 @@ async function renderDocs() {
       return;
     }
 
-    list.innerHTML = docs
-      .map((d) => {
-        const tags = (d.tags || []).slice(0, 6);
-        const tagsHtml = tags.map((t) => `<span class="badge">${escapeHtml(t)}</span>`).join("");
-        const updated = d.updated_at ? new Date(d.updated_at).toLocaleString() : "";
-        const hasFile = !!(d.file_path && String(d.file_path).trim());
-        const hasDrive = !!(d.drive_url && String(d.drive_url).trim());
+    list.innerHTML = docs.map((d) => {
+      const tags = (d.tags || []).slice(0, 6);
+      const tagsHtml = tags.map((t) => `<span class="badge">${escapeHtml(t)}</span>`).join("");
+      const updated = d.updated_at ? new Date(d.updated_at).toLocaleString() : "";
+      const hasFile = !!(d.file_path && String(d.file_path).trim());
+      const hasDrive = !!(d.drive_url && String(d.drive_url).trim());
 
-        return `
-          <li class="item">
-            <div class="itemTop">
-              <div>
-                <strong>${escapeHtml(d.title || "(zonder titel)")}</strong>
-                <div class="muted">Laatst aangepast: ${escapeHtml(updated)}</div>
-                <div class="badges">${tagsHtml}</div>
-              </div>
-              <div class="actions">
-                <button class="btn small secondary" data-open="${d.id}">Open</button>
-                ${hasFile ? `<button class="btn small secondary" data-openfile="${d.id}">Open document</button>` : ``}
-                ${hasDrive ? `<button class="btn small secondary" data-opendrive="${d.id}">Drive</button>` : ``}
-              </div>
+      return `
+        <li class="item">
+          <div class="itemTop">
+            <div>
+              <strong>${escapeHtml(d.title || "(zonder titel)")}</strong>
+              <div class="muted">Laatst aangepast: ${escapeHtml(updated)}</div>
+              <div class="badges">${tagsHtml}</div>
             </div>
-          </li>
-        `;
-      })
-      .join("");
+            <div class="actions">
+              <button class="btn small secondary" data-open="${d.id}">Open</button>
+              ${hasFile ? `<button class="btn small secondary" data-openfile="${d.id}">Open document</button>` : ``}
+              ${hasDrive ? `<button class="btn small secondary" data-opendrive="${d.id}">Drive</button>` : ``}
+            </div>
+          </div>
+        </li>
+      `;
+    }).join("");
   } catch (e) {
     meta.textContent = "Fout bij laden.";
     list.innerHTML = "";
@@ -549,49 +570,47 @@ function renderSearchResults(hits, label) {
   if (!meta || !list) return;
 
   meta.textContent = label || "";
-  if (!hits.length) {
-    list.innerHTML = `<li class="muted">Geen resultaten.</li>`;
-    return;
-  }
+  if (!hits.length) { list.innerHTML = `<li class="muted">Geen resultaten.</li>`; return; }
 
-  list.innerHTML = hits
-    .map(
-      (d) => `
-      <li class="item">
-        <div class="itemTop">
-          <div>
-            <strong>${escapeHtml(d.title || "(zonder titel)")}</strong>
-            <div class="muted">${escapeHtml(tagsToText(d.tags || []))}</div>
-          </div>
-          <div class="actions">
-            <button class="btn small secondary" data-open="${d.id}">Open</button>
-          </div>
+  list.innerHTML = hits.map((d) => `
+    <li class="item">
+      <div class="itemTop">
+        <div>
+          <strong>${escapeHtml(d.title || "(zonder titel)")}</strong>
+          <div class="muted">${escapeHtml(tagsToText(d.tags || []))}</div>
         </div>
-      </li>
-    `
-    )
-    .join("");
+        <div class="actions">
+          <button class="btn small secondary" data-open="${d.id}">Open</button>
+        </div>
+      </div>
+    </li>
+  `).join("");
 }
 
 // ==============================
-// Search (client-side)
+// Search
+// - tags input: "pasta, snel" => AND match
 // ==============================
 async function runTagSearch() {
-  const q = (el("searchInput")?.value || "").trim().toLowerCase();
+  const raw = (el("searchInput")?.value || "").trim().toLowerCase();
 
   if (!currentUser) return renderSearchResults([], "Login om te zoeken.");
   if (!currentWorkspaceId) return renderSearchResults([], "Geen workspace: zoekfunctie is uitgeschakeld.");
-  if (!q) return renderSearchResults([], "");
+  if (!raw) return renderSearchResults([], "");
 
+  const wanted = raw.split(",").map(s => s.trim()).filter(Boolean); // AND tags
   const docs = cacheRecipes.length ? cacheRecipes : await fetchRecipes();
-  const hits = docs.filter((d) => (d.tags || []).map((t) => String(t).toLowerCase()).some((t) => t.includes(q)));
 
-  renderSearchResults(hits, `${hits.length} resultaat/resultaten voor tag "${q}".`);
+  const hits = docs.filter((d) => {
+    const tags = (d.tags || []).map(t => String(t).toLowerCase());
+    return wanted.every(w => tags.some(t => t.includes(w)));
+  });
+
+  renderSearchResults(hits, `${hits.length} resultaat/resultaten voor tag(s) "${raw}".`);
 }
 
 async function runTitleSearch() {
   const qRaw = (el("titleSearchInput")?.value || "").trim();
-
   if (!currentUser) return renderSearchResults([], "Login om te zoeken.");
   if (!currentWorkspaceId) return renderSearchResults([], "Geen workspace: zoekfunctie is uitgeschakeld.");
   if (!qRaw) return renderSearchResults([], "");
@@ -621,7 +640,7 @@ function saveFavoriteSearch() {
 }
 
 // ==============================
-// Open in editor (zonder extra fetch)
+// Open in editor
 // ==============================
 function openRecipeInEditor(id) {
   const r = findCachedRecipeById(id);
@@ -641,7 +660,7 @@ function openRecipeInEditor(id) {
 }
 
 // ==============================
-// Click delegation (Open/Drive/Doc)
+// Click delegation
 // ==============================
 function wireListsDelegation() {
   const resultsList = el("resultsList");
@@ -663,10 +682,7 @@ function wireListsDelegation() {
       if (!openBtn && !driveBtn && !fileBtn) return;
 
       try {
-        if (openBtn) {
-          openRecipeInEditor(openBtn.getAttribute("data-open"));
-          return;
-        }
+        if (openBtn) { openRecipeInEditor(openBtn.getAttribute("data-open")); return; }
         if (driveBtn) {
           const r = findCachedRecipeById(driveBtn.getAttribute("data-opendrive"));
           const url = toDriveOpenUrl(r?.drive_url);
@@ -686,13 +702,11 @@ function wireListsDelegation() {
 }
 
 // ==============================
-// Service worker (optioneel)
+// Service worker
 // ==============================
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
-  try {
-    await navigator.serviceWorker.register("./sw.js");
-  } catch {}
+  try { await navigator.serviceWorker.register("./sw.js"); } catch {}
 }
 
 // ==============================
@@ -704,53 +718,31 @@ window.addEventListener("DOMContentLoaded", async () => {
   wireListsDelegation();
   wireFavoritesDelegation();
 
-  // Auth buttons
+  // Auth
   el("btnLogin")?.addEventListener("click", loginWithPassword);
   el("btnRegister")?.addEventListener("click", registerWithPassword);
   el("btnLogout")?.addEventListener("click", logout);
 
-  // Editor basics
-  el("btnNew")?.addEventListener("click", () => {
-    clearEditor();
-    setStatus("Nieuw recept: vul velden in en klik Opslaan.", "muted");
-  });
+  // Admin
+  el("btnAdmin")?.addEventListener("click", openAdminPanel);
+  el("btnAdminClose")?.addEventListener("click", closeAdminPanel);
+  el("btnAdminAdd")?.addEventListener("click", adminAddUser);
 
-  el("btnClear")?.addEventListener("click", () => {
-    clearEditor();
-    setStatus("Leeggemaakt.", "muted");
-  });
+  // Editor basics
+  el("btnNew")?.addEventListener("click", () => { clearEditor(); setStatus("Nieuw recept: vul velden in en klik Opslaan.", "muted"); });
+  el("btnClear")?.addEventListener("click", () => { clearEditor(); setStatus("Leeggemaakt.", "muted"); });
 
   // Search
   el("btnSearch")?.addEventListener("click", runTagSearch);
-  el("searchInput")?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") runTagSearch();
-  });
+  el("searchInput")?.addEventListener("keydown", (e) => { if (e.key === "Enter") runTagSearch(); });
 
   el("btnTitleSearch")?.addEventListener("click", runTitleSearch);
-  el("titleSearchInput")?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") runTitleSearch();
-  });
+  el("titleSearchInput")?.addEventListener("keydown", (e) => { if (e.key === "Enter") runTitleSearch(); });
 
   // Favorites
   el("btnSaveFav")?.addEventListener("click", saveFavoriteSearch);
 
-  // CSV import
-  el("btnImport")?.addEventListener("click", () => el("csvFile")?.click());
-  el("csvFile")?.addEventListener("change", async (e) => {
-    try {
-      requireWorkspace();
-      const f = e.target.files?.[0];
-      if (!f) return;
-      const csvText = await f.text();
-      await importCsvText(csvText);
-    } catch (err) {
-      setStatus("Import fout: " + (err?.message || err), "err");
-    } finally {
-      if (el("csvFile")) el("csvFile").value = "";
-    }
-  });
-
-  // Doc editor buttons
+  // Doc buttons
   el("btnOpenDoc")?.addEventListener("click", async () => {
     try {
       requireWorkspace();
@@ -784,13 +776,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       setStatus("Document verwijderen…", "muted");
       await removeRecipeDocument(r);
 
-      const updated = {
-        ...(r || {}),
-        file_path: null,
-        file_name: null,
-        mime_type: null,
-        updated_at: new Date().toISOString(),
-      };
+      const updated = { ...(r || {}), file_path: null, file_name: null, mime_type: null, updated_at: new Date().toISOString() };
       cacheRecipes = cacheRecipes.map((x) => (String(x.id) === String(updated.id) ? updated : x));
       currentRecipe = updated;
 
@@ -802,7 +788,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // Save
+  // Save (bestand is optioneel)
   el("btnSave")?.addEventListener("click", async () => {
     try {
       requireWorkspace();
@@ -813,11 +799,6 @@ window.addEventListener("DOMContentLoaded", async () => {
       const file = el("docFile")?.files?.[0] || null;
 
       if (!title) return setStatus("Titel is verplicht.", "err");
-
-      const hasExistingFile = !!(currentRecipe?.file_path && String(currentRecipe.file_path).trim());
-      if (!file && !hasExistingFile) {
-        return setStatus("Kies een document om te uploaden (of open een bestaand recept met document).", "err");
-      }
 
       setStatus("Opslaan…", "muted");
 
@@ -881,126 +862,10 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // Auth init + data
+  // Init
   await refreshAuth();
-
-  sb.auth.onAuthStateChange(async () => {
-    await refreshAuth();
-    await renderDocs();
-  });
-
+  sb.auth.onAuthStateChange(async () => { await refreshAuth(); await renderDocs(); });
   await renderDocs();
   updateEditorDocControls();
   setStatus("", "muted");
 });
-
-// ==============================
-// CSV import (title,tags,drive_url)
-// ==============================
-function parseCsv(text) {
-  const rows = [];
-  let row = [];
-  let cur = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    const next = text[i + 1];
-
-    if (ch === '"' && next === '"') {
-      cur += '"';
-      i++;
-      continue;
-    }
-    if (ch === '"') {
-      inQuotes = !inQuotes;
-      continue;
-    }
-
-    if (!inQuotes && ch === ",") {
-      row.push(cur);
-      cur = "";
-      continue;
-    }
-
-    if (!inQuotes && (ch === "\n" || ch === "\r")) {
-      if (ch === "\r" && next === "\n") i++;
-      row.push(cur);
-      cur = "";
-      if (row.some((c) => String(c).trim() !== "")) rows.push(row);
-      row = [];
-      continue;
-    }
-    cur += ch;
-  }
-
-  if (cur.length || row.length) {
-    row.push(cur);
-    if (row.some((c) => String(c).trim() !== "")) rows.push(row);
-  }
-
-  return rows;
-}
-
-async function importCsvText(csvText) {
-  requireWorkspace();
-
-  const rows = parseCsv(csvText);
-  if (rows.length < 2) return setStatus("CSV bevat geen data.", "err");
-
-  const header = rows[0].map((h) => String(h || "").trim().toLowerCase());
-  const iTitle = header.indexOf("title");
-  const iTags = header.indexOf("tags");
-  const iUrl = header.indexOf("drive_url");
-
-  if (iTitle === -1) {
-    return setStatus('CSV moet minstens een kolom "title" hebben (en optioneel "tags" en/of "drive_url").', "err");
-  }
-
-  const existingTitles = new Set(
-    (cacheRecipes || [])
-      .map((r) => String(r.title || "").trim().toLowerCase())
-      .filter(Boolean)
-  );
-
-  const inserts = [];
-
-  for (let r = 1; r < rows.length; r++) {
-    const cols = rows[r] || [];
-    const title = String(cols[iTitle] || "").trim();
-    const driveUrl = iUrl === -1 ? "" : String(cols[iUrl] || "").trim();
-    const tags = iTags === -1 ? [] : normalizeTagsInput(String(cols[iTags] || ""));
-
-    if (!title) continue;
-    if (existingTitles.has(title.toLowerCase())) continue;
-
-    inserts.push({
-      user_id: currentUser.id,
-      workspace_id: currentWorkspaceId,
-      title,
-      tags,
-      drive_url: driveUrl || null,
-      updated_at: new Date().toISOString(),
-    });
-
-    existingTitles.add(title.toLowerCase());
-  }
-
-  if (!inserts.length) return setStatus("Geen nieuwe rijen om te importeren (of alles waren dubbels).", "muted");
-
-  const btn = el("btnImport");
-  if (btn) btn.disabled = true;
-
-  try {
-    setStatus("Import bezig…", "muted");
-    const { error } = await sb.from("recipes").insert(inserts);
-    if (error) throw error;
-
-    setStatus(`Import klaar: ${inserts.length} recepten toegevoegd.`, "ok");
-    await renderDocs();
-  } catch (e) {
-    setStatus("Import fout: " + (e?.message || e), "err");
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-}
