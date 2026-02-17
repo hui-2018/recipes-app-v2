@@ -29,6 +29,9 @@
         <button id="btnLogout" class="btn secondary" style="display:none;">Logout</button>
       </div>
 
+      <!-- Alleen zichtbaar voor owner -->
+      <button id="btnAdmin" class="btn secondary" style="display:none;">Admin</button>
+
       <input id="csvFile" type="file" accept=".csv,text/csv" style="display:none" />
       <button id="btnImport" class="btn secondary" title="Importeer title,tags (en optioneel drive_url) uit CSV">Import CSV</button>
 
@@ -42,12 +45,49 @@
       <div id="status" class="status muted"></div>
     </div>
 
+    <!-- Admin panel (alleen owner) -->
+    <section id="adminPanel" class="panel" style="display:none;">
+      <div class="adminHeader">
+        <h2>Admin</h2>
+        <button id="btnAdminClose" class="btn small secondary">Sluit</button>
+      </div>
+
+      <div class="adminGrid">
+        <div>
+          <label class="label">E-mail</label>
+          <input id="adminEmail" class="input" placeholder="user@domein.be" />
+        </div>
+
+        <div>
+          <label class="label">Wachtwoord (optioneel)</label>
+          <input id="adminPassword" class="input" type="password" placeholder="Laat leeg als user al bestaat" />
+        </div>
+
+        <div>
+          <label class="label">Rol</label>
+          <select id="adminRole" class="input">
+            <option value="member" selected>member</option>
+            <option value="owner">owner</option>
+          </select>
+        </div>
+
+        <div class="adminActions">
+          <button id="btnAdminAdd" class="btn primary">User toevoegen aan workspace</button>
+        </div>
+      </div>
+
+      <div class="muted small">
+        - Bestaat de user nog niet? Vul een wachtwoord in om hem/haar te maken.<br/>
+        - Bestaat de user al? Laat wachtwoord leeg om enkel membership toe te voegen.
+      </div>
+    </section>
+
     <section class="grid">
       <aside class="panel">
         <h2>Zoeken</h2>
 
-        <label class="label">Zoek op tags</label>
-        <input id="searchInput" class="input" placeholder="pasta" />
+        <label class="label">Zoek op tags (komma-gescheiden)</label>
+        <input id="searchInput" class="input" placeholder="pasta, snel" />
         <button id="btnSearch" class="btn secondary full">Zoek tags</button>
 
         <div class="spacer"></div>
@@ -93,11 +133,11 @@
 
         <div class="spacer"></div>
 
-        <label class="label">Document (PDF / Word / ...) in cloud storage</label>
+        <label class="label">Document (PDF / Word / ...) in cloud storage (optioneel)</label>
         <input id="docFile" class="input" type="file" />
 
         <div id="docHint" class="muted small">
-          Kies een bestand. Bij Opslaan wordt eerst het recept opgeslagen en daarna het document geüpload.
+          Kies een bestand als je een document wil koppelen/vervangen. Voor titel/tags aanpassen is dit niet nodig.
         </div>
 
         <div class="row">
@@ -108,8 +148,8 @@
         <div class="spacer"></div>
 
         <details>
-          <summary>Oude Google Drive link (optioneel, enkel voor migratie)</summary>
-          <label class="label">Drive link</label>
+          <summary>(Google Drive) link (optioneel)</summary>
+          <label class="label">Google Drive link</label>
           <input id="driveUrl" class="input" placeholder="https://drive.google.com/..." />
         </details>
 
