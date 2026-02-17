@@ -8,46 +8,6 @@
   <link rel="manifest" href="./manifest.json" />
   <meta name="theme-color" content="#0b1220" />
   <link rel="stylesheet" href="./styles.css" />
-
-  <!-- Compact topbar auth layout -->
-  <style>
-    .topActions {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
-
-    .authGroup {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .authGroup .input {
-      padding: 8px 10px;
-      height: 38px;
-      line-height: 38px;
-    }
-
-    #email { width: 220px; max-width: 70vw; }
-    #password { width: 160px; max-width: 50vw; }
-
-    .authGroup .btn {
-      padding: 8px 10px;
-      height: 38px;
-      line-height: 38px;
-      white-space: nowrap;
-    }
-
-    /* Op kleine schermen: inputs iets smaller */
-    @media (max-width: 520px) {
-      #email { width: 180px; }
-      #password { width: 140px; }
-    }
-  </style>
 </head>
 
 <body>
@@ -61,7 +21,6 @@
     </div>
 
     <div class="topActions">
-      <!-- Compact auth group -->
       <div class="authGroup">
         <input id="email" class="input" type="email" placeholder="jij@voorbeeld.be" autocomplete="email" />
         <input id="password" class="input" type="password" placeholder="Wachtwoord" autocomplete="current-password" />
