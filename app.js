@@ -40,8 +40,8 @@ window.addEventListener("unhandledrejection", (e) => {
   setStatus("Async fout: " + msg, "err");
 });
 
-// Supabase magic link tokens kunnen in de URL hash blijven staan.
-// Dat kan logout-tests verstoren (lijkt alsof je meteen weer ingelogd wordt).
+// Supabase magic links zetten tokens in de URL hash.
+// BELANGRIJK: pas opruimen NA Supabase de sessie verwerkt heeft (dus niet op page-load).
 function cleanAuthHashFromUrl() {
   const h = window.location.hash || "";
   if (h.includes("access_token=") || h.includes("refresh_token=") || h.includes("type=")) {
@@ -100,9 +100,11 @@ function toDriveOpenUrl(url) {
   const s = String(url || "").trim();
   if (!s) return "";
 
+  // /file/d/<id>/view
   const m1 = s.match(/\/d\/([^/]+)/);
   if (m1 && m1[1]) return `https://drive.google.com/open?id=${m1[1]}`;
 
+  // ?id=<id>
   const m2 = s.match(/[?&]id=([^&]+)/);
   if (m2 && m2[1]) return `https://drive.google.com/open?id=${m2[1]}`;
 
@@ -118,9 +120,7 @@ function buildStoragePath({ workspaceId, recipeId, fileName }) {
 function requireWorkspace() {
   if (!currentUser) throw new Error("Niet ingelogd.");
   if (!currentWorkspaceId) {
-    throw new Error(
-      "Geen workspace gevonden voor dit account. Voeg dit account toe als member (workspace_members)."
-    );
+    throw new Error("Geen workspace gevonden voor dit account. Voeg dit account toe als member (workspace_members).");
   }
 }
 
@@ -128,7 +128,7 @@ function requireWorkspace() {
 // Auth + Workspace
 // ==============================
 async function loadMyWorkspaceId() {
-  // Verwacht: workspace_members bevat rows voor ingelogde user
+  // Vereist: workspace_members SELECT policy voor eigen user_id
   const { data, error } = await sb
     .from("workspace_members")
     .select("workspace_id")
@@ -152,10 +152,7 @@ async function refreshAuth() {
     try {
       currentWorkspaceId = await loadMyWorkspaceId();
       if (!currentWorkspaceId) {
-        setStatus(
-          "Je bent ingelogd, maar dit account is nog niet toegevoegd aan een workspace.",
-          "err"
-        );
+        setStatus("Je bent ingelogd, maar dit account is nog niet toegevoegd aan een workspace.", "err");
       } else {
         setStatus("", "muted");
       }
@@ -201,23 +198,16 @@ async function loginWithMagicLink() {
 async function logout() {
   try {
     await sb.auth.signOut();
-    // Hash cleanup zodat je niet “terug ingelogd” lijkt
-    history.replaceState(null, "", window.location.pathname + window.location.search + "#");
 
-    currentUser = null;
-    currentWorkspaceId = null;
-    cacheRecipes = [];
-    clearEditor();
-    renderDocs();
-    renderFavs();
-    setStatus("Uitgelogd.", "muted");
+    // Hard reset naar schone URL zonder hash/tokens. Dit voorkomt "blijven hangen" op oud account.
+    window.location.replace(window.location.pathname + window.location.search);
   } catch (e) {
     setStatus("Logout fout: " + (e?.message || e), "err");
   }
 }
 
 // ==============================
-// Favorites (localStorage)
+// Favorites (localStorage) - per workspace
 // ==============================
 function favKey() {
   return `recepten_favs_${currentWorkspaceId || "no_ws"}`;
@@ -354,7 +344,7 @@ async function upsertRecipe(payload) {
     const { data, error } = await sb
       .from("recipes")
       .insert({
-        user_id: currentUser.id,
+        user_id: currentUser.id, // audit
         workspace_id: currentWorkspaceId,
         title: payload.title,
         tags: payload.tags,
@@ -795,7 +785,7 @@ async function importCsvText(csvText) {
   btn.disabled = true;
 
   try {
-    setStatus(`Import bezig…`, "muted");
+    setStatus("Import bezig…", "muted");
     const { error } = await sb.from("recipes").insert(inserts);
     if (error) throw error;
 
@@ -906,9 +896,6 @@ async function registerServiceWorker() {
 window.addEventListener("DOMContentLoaded", async () => {
   await registerServiceWorker();
 
-  // Indien je net van een magic link komt: hash meteen opschonen
-  cleanAuthHashFromUrl();
-
   wireListsDelegation();
   wireFavoritesDelegation();
 
@@ -1017,7 +1004,6 @@ window.addEventListener("DOMContentLoaded", async () => {
       // 1) upsert recipe
       const id = await upsertRecipe({ title, tags, drive_url });
       currentRecipeId = id;
-      setStatus("Recept opgeslagen.", "muted");
 
       // 2) upload if needed
       if (file) {
@@ -1060,12 +1046,13 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // Auth state
   await refreshAuth();
-  sb.auth.onAuthStateChange(async () => {
-    // tokens uit URL hash opruimen zodra session gezet is
-    cleanAuthHashFromUrl();
 
+  sb.auth.onAuthStateChange(async () => {
     await refreshAuth();
     await renderDocs();
+
+    // nu pas (na session verwerking) tokens uit de URL hash opruimen
+    cleanAuthHashFromUrl();
   });
 
   await renderDocs();
